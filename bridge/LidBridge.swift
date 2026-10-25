@@ -60,6 +60,24 @@ if sensor == nil {
 let parameters = NWParameters.tcp
 let wsOptions = NWProtocolWebSocket.Options()
 wsOptions.autoReplyPing = true
+
+// Only Lidscape may read the lid. A browser sends its page's origin, so any site
+// the user visits could otherwise follow when the lid opens and closes. Allowed:
+// the app's web view, and pages served from this Mac. Clients without an Origin
+// are local programs, which can read the sensor themselves anyway.
+func originAllowed(_ origin: String?) -> Bool {
+    guard let origin, let url = URL(string: origin), let scheme = url.scheme else { return true }
+    if scheme == "tauri" { return url.host == "localhost" }
+    guard scheme == "http" || scheme == "https" else { return false }
+    return ["localhost", "127.0.0.1", "tauri.localhost"].contains(url.host ?? "")
+}
+
+wsOptions.setClientRequestHandler(.main) { _, headers in
+    let origin = headers.first { $0.name.lowercased() == "origin" }?.value
+    if originAllowed(origin) { return NWProtocolWebSocket.Response(status: .accept, subprotocol: nil) }
+    print("LidBridge: refused a page from \(origin ?? "?")")
+    return NWProtocolWebSocket.Response(status: .reject, subprotocol: nil)
+}
 parameters.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)
 parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
 
