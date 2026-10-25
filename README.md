@@ -73,6 +73,14 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 
 New cities and themes come in as pull requests. Read [CONTRIBUTING.md](CONTRIBUTING.md). With Claude Code or Codex, open the repo and say "Build Göteborg"; [AGENTS.md](AGENTS.md) tells the agent what to do.
 
+## License
+
+- Code: [MIT](LICENSE).
+- Cities, themes, research and screenshots: [CC BY 4.0](LICENSE-CONTENT). Credit
+  "Lidscape by Sandstream AB and contributors".
+- Font: Instrument Serif, SIL Open Font License 1.1 (`assets/fonts/LICENSE.txt`).
+- The name Lidscape and the app icon are not covered by these licenses.
+
 ## Credits
 
 - Lid sensor approach: [samhenrigold/LidAngleSensor](https://github.com/samhenrigold/LidAngleSensor) (Apache 2.0)

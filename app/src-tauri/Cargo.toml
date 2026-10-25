@@ -3,6 +3,7 @@ name = "lidscape"
 version = "0.1.0"
 description = "Lidscape: a pop-up paper city behind your screen"
 authors = ["Peter Sandström"]
+license = "MIT"
 edition = "2021"
 
 [lib]

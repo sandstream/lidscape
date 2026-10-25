@@ -1,5 +1,10 @@
 # Add a city or a theme
 
+By opening a pull request you agree that your contribution is licensed as the
+rest of the repository: code under MIT (`LICENSE`), cities, themes and research
+under CC BY 4.0 (`LICENSE-CONTENT`). Use only photos and sources you may use;
+link them in the research file instead of copying them in.
+
 Lidscape grows one city at a time, and every city comes in as a pull request.
 Themes, such as Christmas, come in the same way.
 A good city is one that a local recognizes in two seconds, from the shape of
