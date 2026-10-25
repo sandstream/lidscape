@@ -248,7 +248,17 @@ function windowStars(fx, ctx) {
   }
 }
 
-const EFFECTS = { snowfall, snowcaps, stringLights, windowStars }
+// Ice on the water, as cold as the snow is deep: open water with a little snow,
+// floes along the quay with more, most of the water frozen with a lot. The water
+// shader draws the floes and their cracks.
+function ice(fx, ctx) {
+  return () => {
+    const amount = ctx.setting(fx.setting, 1)
+    ctx.water.ice.value = clamp01((amount - 0.25) / 0.75)
+  }
+}
+
+const EFFECTS = { snowfall, snowcaps, stringLights, windowStars, ice }
 export const EFFECT_TYPES = Object.keys(EFFECTS)
 
 // Builds the variant's effects that this city allows, and returns one update.

@@ -392,6 +392,7 @@ function frame() {
     post.update({ ...settings, [focusId]: focus })
   }
   updateLabel()
+  city.renderReflection(renderer, camera)
   composer.render()
 
   if (input.cameraOn && (hudTick = (hudTick + 1) % 15) === 0) refreshHud()

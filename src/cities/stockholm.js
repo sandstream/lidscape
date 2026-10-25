@@ -421,7 +421,7 @@ export const stockholm = {
   // The city stands 15 cm back, so Strömmen has room to mirror it.
   water: { color: '#4c6683', zFrom: -15, zTo: 6 },
   palette: PAPER,
-  traits: { snow: true, adventStars: true },
+  traits: { snow: true, adventStars: true, ice: true },
   layers: [
     {
       // Globen far to the south, the white sphere every Stockholm skyline drawing
