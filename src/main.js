@@ -237,6 +237,7 @@ addEventListener('keydown', (e) => {
 const label = document.getElementById('label')
 const pointerNdc = new THREE.Vector2()
 let pointerInside = false
+let focus = settings[theme.post?.tiltShift?.setting] ?? 0.3
 const labelRay = new THREE.Raycaster()
 let shownLabel = null
 function updateLabel() {
@@ -381,7 +382,15 @@ function frame() {
 
   setOffAxis(camera, eye, screenW, SCREEN_H)
   city.update(progress, lights, time)
-  post.update(settings)
+  // Tilt-shift focus follows the pointer's height over the scene, so the sharp
+  // band sits where you look; elsewhere the setting holds it. Gaze from the
+  // webcam is too rough for this, the pointer is not.
+  const focusId = theme.post?.tiltShift?.setting
+  if (focusId) {
+    const target = pointerInside ? Math.min(0.9, Math.max(0.1, (pointerNdc.y + 1) / 2)) : settings[focusId]
+    focus += (target - focus) * k(4)
+    post.update({ ...settings, [focusId]: focus })
+  }
   updateLabel()
   composer.render()
 
