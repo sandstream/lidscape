@@ -1,4 +1,4 @@
-# Add a city, a theme or a variant
+# Add a city, a theme, a variant or a language
 
 By opening a pull request you agree that your contribution is licensed as the
 rest of the repository: code under MIT (`LICENSE`), cities, themes, variants and research
@@ -7,7 +7,7 @@ link them in the research file instead of copying them in.
 
 Lidscape grows one city at a time, and every city comes in as a pull request.
 Themes (the artistic form, such as Miniatyr) and variants (an occasion, such
-as Jul) come in the same way.
+as Jul) come in the same way, and so do languages.
 A good city is one that a local recognizes in two seconds, from the shape of
 its skyline alone.
 
@@ -58,8 +58,11 @@ traits: { snow: false, adventStars: false }, // Nairobi
 Variants read the traits, so Christmas in Nairobi gets string lights but no snow.
 
 Give each landmark a hover label with its name and one line of facts, taken
-from the research file: `{ name: 'Stadshuset', note: '1923 · tornet 106 m' }`.
+from the research file. The page is in Swedish and English, so give text that
+differs as `{ sv, en }`, and a plain string when it is the same in both:
+`{ name: { sv: 'Stadshuset', en: 'City Hall' }, note: { sv: '1923 · tornet 106 m', en: '1923 · tower 106 m' } }`.
 The `labelled()` helper in `stockholm.js` puts it on every piece of a landmark.
+The same rule applies to the names and setting labels of themes and variants.
 
 Three rules keep a skyline readable:
 
@@ -89,12 +92,12 @@ names post steps from `src/post.js` and the settings people can change:
 ```js
 export const miniature = {
   id: 'miniature',
-  name: 'Miniatyr',
+  name: { sv: 'Miniatyr', en: 'Miniature' },
   post: {
     tiltShift: { setting: 'focus', blur: 7, passes: 2 },
     grade: { saturation: 1.22, contrast: 1.1, vignette: 0.35 },
   },
-  settings: [{ id: 'focus', label: 'Skärpa i höjdled', min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
+  settings: [{ id: 'focus', label: { sv: 'Skärpa i höjdled', en: 'Sharp band height' }, min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
 }
 ```
 
@@ -111,12 +114,12 @@ in `src/variants/`, listed in `src/variants/index.js`. It lists effects from
 ```js
 export const christmas = {
   id: 'christmas',
-  name: 'Jul',
+  name: { sv: 'Jul', en: 'Christmas' },
   effects: [
     { type: 'stringLights', colors: ['#ffd9a0'] },
     { type: 'snowfall', requires: 'snow', setting: 'snow' },
   ],
-  settings: [{ id: 'snow', label: 'Snö', min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
+  settings: [{ id: 'snow', label: { sv: 'Snö', en: 'Snow' }, min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
 }
 ```
 
@@ -132,3 +135,26 @@ Rules for variants:
 
 Theme and variant settings share the URL, so their ids must differ:
 `?theme=miniature&focus=0.4&variant=christmas&snow=0.3`.
+
+# Add a language
+
+The page is in English and Swedish. English is the default, and the page
+follows the Mac's language when it knows it. A new language is one file and
+two app files:
+
+1. Copy `src/lang/en.js` to `src/lang/<code>.js`, where `<code>` is the
+   two-letter ISO 639-1 code, such as `de`. Translate every string, and give
+   `name` in the language itself (`Deutsch`). List it in `src/lang/index.js`.
+2. Add `<string><code></string>` to `CFBundleLocalizations` in
+   `app/src-tauri/Info.plist`. Without it, a Mac in that language opens the
+   app in English.
+3. Write `app/src-tauri/locales/<code>.lproj/InfoPlist.strings` with the camera
+   question (`NSCameraUsageDescription`), and map it in `bundle.macOS.files` in
+   `app/src-tauri/tauri.conf.json`, as for `sv`.
+4. Optionally, translate city labels and theme and variant names: add your
+   code next to `sv` and `en`, such as `{ sv: 'Snö', en: 'Snow', de: 'Schnee' }`.
+   Text without your language shows in English.
+5. Run `node tools/check-cities.mjs` until it prints OK, and look at
+   `?lang=<code>` in a browser.
+
+Every city, theme and variant must have its text in both English and Swedish.

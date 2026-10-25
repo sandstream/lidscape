@@ -3,10 +3,10 @@
 // stronger and the corners darker.
 export const miniature = {
   id: 'miniature',
-  name: 'Miniatyr',
+  name: { sv: 'Miniatyr', en: 'Miniature' },
   post: {
     tiltShift: { setting: 'focus', blur: 7, passes: 2 },
     grade: { saturation: 1.22, contrast: 1.1, vignette: 0.35 },
   },
-  settings: [{ id: 'focus', label: 'Skärpa i höjdled', min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
+  settings: [{ id: 'focus', label: { sv: 'Skärpa i höjdled', en: 'Sharp band height' }, min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
 }

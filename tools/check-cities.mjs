@@ -2,11 +2,12 @@
 //   node tools/check-cities.mjs
 // It runs in CI on each pull request. It does not render; open the page for that.
 
-import { readdirSync, existsSync } from 'node:fs'
+import { readdirSync, existsSync, readFileSync } from 'node:fs'
 import { CITIES } from '../src/cities/index.js'
 import { THEMES } from '../src/themes/index.js'
 import { VARIANTS } from '../src/variants/index.js'
 import { TRAITS } from '../src/traits.js'
+import { LANGUAGES, BASE } from '../src/lang/index.js'
 
 // Keep in step with BUILDERS in src/city.js.
 const ITEM_TYPES = ['house', 'tower', 'hill', 'arcade', 'lamp', 'outline']
@@ -17,6 +18,15 @@ const HEX = /^#[0-9a-f]{6}$/i
 const errors = []
 const fail = (where, msg) => errors.push(`${where}: ${msg}`)
 const finite = (v) => typeof v === 'number' && Number.isFinite(v)
+// Shown text: one string for every language, or { sv, en, ... } with at least
+// the base languages filled in and no unknown language codes.
+const text = (v) =>
+  (typeof v === 'string' && v.length > 0) ||
+  (v !== null &&
+    typeof v === 'object' &&
+    BASE.every((l) => typeof v[l] === 'string' && v[l]) &&
+    Object.entries(v).every(([l, s]) => l in LANGUAGES && typeof s === 'string' && s))
+const TEXT_RULE = `must be a string or { ${BASE.join(', ')} } (other languages optional)`
 
 const files = readdirSync(new URL('../src/cities/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
 const ids = CITIES.map((c) => c.id)
@@ -32,7 +42,7 @@ for (const city of CITIES) {
   seen.add(city.id)
   if (!files.includes(`${city.id}.js`)) fail(at, `src/cities/${city.id}.js must hold this city`)
   if (!existsSync(new URL(`../docs/cities/${city.id}.md`, import.meta.url))) fail(at, `docs/cities/${city.id}.md with sources is missing`)
-  if (!city.name) fail(at, 'name is missing')
+  if (!text(city.name)) fail(at, `name ${TEXT_RULE}`)
   for (const trait of Object.keys(TRAITS)) {
     if (typeof city.traits?.[trait] !== 'boolean') fail(at, `traits.${trait} must be true or false (${TRAITS[trait]}), with a source`)
   }
@@ -55,7 +65,8 @@ for (const city of CITIES) {
       const iw = `${lw} item ${ii} (${item.type})`
       if (!ITEM_TYPES.includes(item.type)) return fail(iw, `type must be one of ${ITEM_TYPES.join(', ')}`)
       if (item.tint && !HEX.test(item.tint)) fail(iw, 'tint must be a #rrggbb colour')
-      if (item.label && (typeof item.label.name !== 'string' || !item.label.name)) fail(iw, 'label needs a name')
+      if (item.label && !text(item.label.name)) fail(iw, `label name ${TEXT_RULE}`)
+      if (item.label?.note !== undefined && !text(item.label.note)) fail(iw, `label note ${TEXT_RULE}`)
       if (item.type !== 'outline') return
       const pts = item.points
       if (!Array.isArray(pts) || pts.length < 3) return fail(iw, 'points needs at least 3 [x, y] pairs')
@@ -71,12 +82,32 @@ for (const city of CITIES) {
   })
 }
 
-const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality']
+// Languages: the same keys as English, and the app must declare each one, or a
+// Mac in that language opens the app in English.
+const langFiles = readdirSync(new URL('../src/lang/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
+for (const f of langFiles) if (!(f.replace(/\.js$/, '') in LANGUAGES)) fail(`lang/${f}`, 'file is not listed in src/lang/index.js')
+const plist = readFileSync(new URL('../app/src-tauri/Info.plist', import.meta.url), 'utf8')
+const appFiles = JSON.parse(readFileSync(new URL('../app/src-tauri/tauri.conf.json', import.meta.url), 'utf8')).bundle?.macOS?.files ?? {}
+for (const [code, l] of Object.entries(LANGUAGES)) {
+  const at = `lang ${code}`
+  if (!/^[a-z]{2}$/.test(code)) fail(at, 'code must be two lower case letters (ISO 639-1)')
+  if (!l.name) fail(at, 'name is missing (in the language itself, such as Deutsch)')
+  for (const key of Object.keys(LANGUAGES.en.strings)) if (typeof l.strings?.[key] !== 'string' || !l.strings[key]) fail(at, `strings.${key} is missing`)
+  for (const key of Object.keys(l.strings ?? {})) if (!(key in LANGUAGES.en.strings)) fail(at, `strings.${key} is unknown`)
+  if (!l.strings?.title?.includes('{city}')) fail(at, 'title must hold {city}')
+  if (!plist.includes(`<string>${code}</string>`)) fail(at, 'add it to CFBundleLocalizations in app/src-tauri/Info.plist')
+  const strings = `locales/${code}.lproj/InfoPlist.strings`
+  if (appFiles[`Resources/${code}.lproj/InfoPlist.strings`] !== strings) fail(at, `map Resources/${code}.lproj/InfoPlist.strings to ${strings} in bundle.macOS.files of app/src-tauri/tauri.conf.json`)
+  const path = new URL(`../app/src-tauri/${strings}`, import.meta.url)
+  if (!existsSync(path) || !readFileSync(path, 'utf8').includes('NSCameraUsageDescription')) fail(at, `app/src-tauri/${strings} must translate NSCameraUsageDescription`)
+}
+
+const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality', 'lang']
 const settingIds = new Map()
 function checkSettings(at, list) {
   for (const st of list ?? []) {
     const sw = `${at} setting ${st.id}`
-    if (!st.label) fail(sw, 'label is missing')
+    if (!text(st.label)) fail(sw, `label ${TEXT_RULE}`)
     if (![st.min, st.max, st.step, st.default].every(finite) || st.min >= st.max || st.default < st.min || st.default > st.max) fail(sw, 'needs min < max, step, and a default inside the range')
     if (st.requires && !(st.requires in TRAITS)) fail(sw, `requires unknown trait ${st.requires}`)
     if (RESERVED.includes(st.id)) fail(sw, 'id clashes with a page URL parameter')
@@ -90,7 +121,7 @@ function checkFolder(folder, list, label) {
   for (const f of files) if (!listed.includes(f.replace(/\.js$/, ''))) fail(`${folder}/${f}`, `file is not listed in src/${folder}/index.js`)
   for (const x of list) {
     if (!/^[a-z0-9-]+$/.test(x.id ?? '')) fail(`${label} ${x.id}`, 'id must be lower case letters, digits and hyphens')
-    if (!x.name) fail(`${label} ${x.id}`, 'name is missing')
+    if (!text(x.name)) fail(`${label} ${x.id}`, `name ${TEXT_RULE}`)
   }
   return listed
 }
@@ -123,4 +154,4 @@ if (errors.length) {
   console.error(errors.map((e) => `FAIL ${e}`).join('\n'))
   process.exit(1)
 }
-console.log(`OK: cities (${ids.join(', ')}), themes (${themeIds.join(', ')}), variants (${variantIds.join(', ')})`)
+console.log(`OK: languages (${Object.keys(LANGUAGES).join(', ')}), cities (${ids.join(', ')}), themes (${themeIds.join(', ')}), variants (${variantIds.join(', ')})`)

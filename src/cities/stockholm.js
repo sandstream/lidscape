@@ -394,12 +394,12 @@ function globen(x) {
 
 // Hover labels: name and one line of facts, from docs/cities/stockholm.md.
 const LABELS = {
-  stadshuset: { name: 'Stadshuset', note: '1923 · tornet 106 m' },
-  riddarholmskyrkan: { name: 'Riddarholmskyrkan', note: 'Gjutjärnsspiran 1841 · 91 m' },
-  tyska: { name: 'Tyska kyrkan', note: 'Tornet 1886 · 96 m' },
-  storkyrkan: { name: 'Storkyrkan', note: 'Lanterninen 1743 · 60–66 m' },
-  slottet: { name: 'Kungliga slottet', note: 'Inflyttat 1754' },
-  katarina: { name: 'Katarina kyrka', note: '1695 · 72 m' },
+  stadshuset: { name: { sv: 'Stadshuset', en: 'City Hall' }, note: { sv: '1923 · tornet 106 m', en: '1923 · tower 106 m' } },
+  riddarholmskyrkan: { name: { sv: 'Riddarholmskyrkan', en: 'Riddarholmen Church' }, note: { sv: 'Gjutjärnsspiran 1841 · 91 m', en: 'Cast iron spire 1841 · 91 m' } },
+  tyska: { name: { sv: 'Tyska kyrkan', en: 'German Church' }, note: { sv: 'Tornet 1886 · 96 m', en: 'Tower 1886 · 96 m' } },
+  storkyrkan: { name: { sv: 'Storkyrkan', en: 'Stockholm Cathedral' }, note: { sv: 'Lanterninen 1743 · 60–66 m', en: 'Lantern 1743 · 60–66 m' } },
+  slottet: { name: { sv: 'Kungliga slottet', en: 'Royal Palace' }, note: { sv: 'Inflyttat 1754', en: 'Royal home since 1754' } },
+  katarina: { name: { sv: 'Katarina kyrka', en: 'Katarina Church' }, note: '1695 · 72 m' },
   globen: { name: 'Globen', note: 'Avicii Arena · 1989 · 85 m' },
 }
 const labelled = (label, items) => [items].flat().map((item) => ({ ...item, label }))

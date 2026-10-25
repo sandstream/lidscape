@@ -18,7 +18,8 @@
         "minWidth": 800,
         "minHeight": 520,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "create": false
       }
     ],
     "security": {
@@ -27,15 +28,30 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
     "category": "Entertainment",
-    "shortDescription": "En pop-up-stad bakom skärmen",
-    "externalBin": ["binaries/lid-bridge"],
+    "shortDescription": "A pop-up city behind the screen",
+    "externalBin": [
+      "binaries/lid-bridge"
+    ],
     "macOS": {
       "minimumSystemVersion": "14.4",
       "signingIdentity": "-",
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "files": {
+        "Resources/en.lproj/InfoPlist.strings": "locales/en.lproj/InfoPlist.strings",
+        "Resources/sv.lproj/InfoPlist.strings": "locales/sv.lproj/InfoPlist.strings"
+      }
     }
   }
 }

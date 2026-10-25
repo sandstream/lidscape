@@ -1,7 +1,10 @@
-// All UI text in one place, so a later app build can swap language.
-export const STRINGS = {
-  sv: {
+// Svenska. One of the two base languages: every city, theme and variant has
+// its text in Swedish and English.
+export const sv = {
+  name: 'Svenska',
+  strings: {
     title: 'Lidscape <em>{city}</em>',
+    lang: 'Språk',
     city: 'Stad',
     theme: 'Tema',
     variant: 'Variant',
@@ -25,5 +28,3 @@ export const STRINGS = {
     noWebgl: 'Lidscape behöver WebGL 2, och den här webbläsaren eller datorn saknar det.',
   },
 }
-
-export const t = STRINGS.sv

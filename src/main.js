@@ -13,7 +13,7 @@ import { allows } from './traits.js'
 import { setOffAxis } from './offaxis.js'
 import { connectLid } from './lid.js'
 import { createTracker } from './tracking.js'
-import { t } from './strings.js'
+import { LANGUAGES, pickLang, local } from './lang/index.js'
 
 // The screen is modelled at real size: MacBook Pro 14" is about 30 × 19.5 cm.
 const SCREEN_H = 19.5
@@ -23,6 +23,18 @@ const IDLE_MS = 4000
 const params = new URLSearchParams(location.search)
 // 'auto' until measured, then 'high' or 'low' (see measureQuality below).
 let quality = params.get('quality') ?? 'auto'
+
+// Language: ?lang=, then the viewer's last choice, then the Mac or browser.
+// English when none of them is a language the page has.
+const LANG_KEY = 'lidscape.lang'
+let storedLang = null
+try {
+  storedLang = localStorage.getItem(LANG_KEY)
+} catch {}
+// The Mac app sets lidscapeMacLanguage (see app/src-tauri/src/lib.rs).
+const lang = pickLang(params.get('lang'), storedLang, window.lidscapeMacLanguage, ...(navigator.languages ?? [navigator.language]))
+const t = LANGUAGES[lang].strings
+document.documentElement.lang = lang
 
 // --- Renderer ----------------------------------------------------------------
 
@@ -99,13 +111,26 @@ const cameraBtn = document.getElementById('camera-btn')
 const lightsBtn = document.getElementById('lights-btn')
 const hint = document.getElementById('hud-hint')
 
-document.getElementById('hud-title').innerHTML = t.title.replace('{city}', cityDef.name)
-document.title = `Lidscape ${cityDef.name}`
+const cityName = local(cityDef.name, lang)
+document.getElementById('hud-title').innerHTML = t.title.replace('{city}', cityName)
+document.title = `Lidscape ${cityName}`
+
+// The language picker reloads the page in the new language and remembers it.
+const langPicker = document.getElementById('lang')
+langPicker.setAttribute('aria-label', t.lang)
+for (const [code, l] of Object.entries(LANGUAGES)) langPicker.add(new Option(l.name, code, false, code === lang))
+langPicker.addEventListener('change', () => {
+  try {
+    localStorage.setItem(LANG_KEY, langPicker.value)
+  } catch {}
+  params.set('lang', langPicker.value)
+  location.search = params.toString()
+})
 
 // The city picker reloads the page; the URL carries the choice, so the app can set it too.
 const cityPicker = document.getElementById('city')
 cityPicker.setAttribute('aria-label', t.city)
-for (const c of CITIES) cityPicker.add(new Option(c.name, c.id, false, c.id === cityDef.id))
+for (const c of CITIES) cityPicker.add(new Option(local(c.name, lang), c.id, false, c.id === cityDef.id))
 cityPicker.hidden = CITIES.length < 2
 cityPicker.addEventListener('change', () => {
   params.set('city', cityPicker.value)
@@ -114,7 +139,7 @@ cityPicker.addEventListener('change', () => {
 
 const themePicker = document.getElementById('theme')
 themePicker.setAttribute('aria-label', t.theme)
-for (const th of THEMES) themePicker.add(new Option(th.name, th.id, false, th.id === theme.id))
+for (const th of THEMES) themePicker.add(new Option(local(th.name, lang), th.id, false, th.id === theme.id))
 themePicker.addEventListener('change', () => {
   params.set('theme', themePicker.value)
   location.search = params.toString()
@@ -123,7 +148,7 @@ themePicker.addEventListener('change', () => {
 const variantPicker = document.getElementById('variant')
 variantPicker.setAttribute('aria-label', t.variant)
 variantPicker.add(new Option(t.variantNone, '', false, !variant))
-for (const v of VARIANTS) variantPicker.add(new Option(v.name, v.id, false, v.id === variant?.id))
+for (const v of VARIANTS) variantPicker.add(new Option(local(v.name, lang), v.id, false, v.id === variant?.id))
 variantPicker.addEventListener('change', () => {
   if (variantPicker.value) params.set('variant', variantPicker.value)
   else params.delete('variant')
@@ -135,7 +160,7 @@ const settingsBox = document.getElementById('theme-settings')
 for (const s of allSettings) {
   if (!allows(cityDef, s.requires)) continue
   const label = document.createElement('label')
-  label.textContent = s.label
+  label.textContent = local(s.label, lang)
   const range = Object.assign(document.createElement('input'), { type: 'range', min: s.min, max: s.max, step: s.step })
   range.value = settings[s.id]
   range.addEventListener('input', () => {
@@ -252,8 +277,8 @@ function updateLabel() {
   if (found !== shownLabel) {
     shownLabel = found
     if (found) {
-      label.querySelector('strong').textContent = found.name
-      label.querySelector('span').textContent = found.note ?? ''
+      label.querySelector('strong').textContent = local(found.name, lang)
+      label.querySelector('span').textContent = local(found.note, lang)
     }
     label.hidden = !found
   }

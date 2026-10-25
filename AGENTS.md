@@ -27,6 +27,11 @@ CONTRIBUTING.md. Never let a variant add something a city lacks: use
 `requires` and a trait from `src/traits.js`. Check a variant on a city with the
 trait and on one without it, and check a theme's frame time.
 
+## "Translate Lidscape to <language>"
+
+Follow "Add a language" in CONTRIBUTING.md. The app must declare the language
+in `Info.plist`, or a Mac in that language still opens it in English.
+
 ## Rules
 
 - No build step and no npm dependencies in the page. Three.js and MediaPipe
