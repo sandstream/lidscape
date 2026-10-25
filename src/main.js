@@ -51,6 +51,9 @@ moonLight.castShadow = true
 moonLight.shadow.mapSize.set(2048, 2048)
 Object.assign(moonLight.shadow.camera, { left: -60, right: 60, top: 50, bottom: -20, near: 1, far: 200 })
 moonLight.shadow.bias = -0.0005
+// Cards turn through every angle as the lid moves; push the shadow lookup out
+// along the normal so a face never shades itself in bands.
+moonLight.shadow.normalBias = 0.05
 moonLight.shadow.radius = 4
 scene.add(moonLight)
 
