@@ -3,8 +3,17 @@
 <plist version="1.0">
 <dict>
   <key>NSCameraUsageDescription</key>
-  <string>Lidscape följer ditt huvud och dina händer, så att staden rör sig som bakom ett fönster. Bilden stannar på datorn.</string>
+  <string>Lidscape follows your head and hands, so that the city moves as if behind a window. The picture stays on your Mac.</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.4</string>
+  <!-- The web view follows the Mac's language only among the languages listed
+       here, with English as the default. Keep in step with src/lang/index.js. -->
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>sv</string>
+  </array>
 </dict>
 </plist>

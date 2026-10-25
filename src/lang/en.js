@@ -1,0 +1,30 @@
+// English. One of the two base languages, and the fallback for a language
+// that a city, theme or variant has not been translated to.
+export const en = {
+  name: 'English',
+  strings: {
+    title: 'Lidscape <em>{city}</em>',
+    lang: 'Language',
+    city: 'City',
+    theme: 'Theme',
+    variant: 'Variant',
+    variantNone: 'No variant',
+    lid: 'Lid',
+    face: 'Face',
+    hand: 'Hand',
+    progress: 'Open the book',
+    cameraOn: 'Turn on camera',
+    cameraOff: 'Turn off camera',
+    cameraLoading: 'Starting camera …',
+    cameraError: 'Could not start the camera',
+    lightsOn: 'Lights on',
+    lightsOff: 'Lights off',
+    hintManual: 'Scroll or drag the slider to open the book.',
+    hintLid: 'The lid moves the book. Open and close your MacBook.',
+    hintHand: 'An open hand turns the lights on, a fist turns them off.',
+    hintNoSensor: 'This Mac has no lid sensor that Lidscape can read. Scroll or drag the slider.',
+    hintLowQuality: 'Lower picture quality, so that the picture runs smoothly on this computer.',
+    noCamera: 'No camera',
+    noWebgl: 'Lidscape needs WebGL 2, and this browser or computer does not have it.',
+  },
+}

@@ -13,7 +13,7 @@ import { allows } from './traits.js'
 import { setOffAxis } from './offaxis.js'
 import { connectLid } from './lid.js'
 import { createTracker } from './tracking.js'
-import { STRINGS, LANGS, pickLang, local } from './strings.js'
+import { LANGUAGES, pickLang, local } from './lang/index.js'
 
 // The screen is modelled at real size: MacBook Pro 14" is about 30 × 19.5 cm.
 const SCREEN_H = 19.5
@@ -24,14 +24,16 @@ const params = new URLSearchParams(location.search)
 // 'auto' until measured, then 'high' or 'low' (see measureQuality below).
 let quality = params.get('quality') ?? 'auto'
 
-// Language: ?lang=, then the viewer's last choice, then the browser or Mac.
+// Language: ?lang=, then the viewer's last choice, then the Mac or browser.
+// English when none of them is a language the page has.
 const LANG_KEY = 'lidscape.lang'
 let storedLang = null
 try {
   storedLang = localStorage.getItem(LANG_KEY)
 } catch {}
-const lang = pickLang(params.get('lang'), storedLang, ...(navigator.languages ?? [navigator.language]))
-const t = STRINGS[lang]
+// The Mac app sets lidscapeMacLanguage (see app/src-tauri/src/lib.rs).
+const lang = pickLang(params.get('lang'), storedLang, window.lidscapeMacLanguage, ...(navigator.languages ?? [navigator.language]))
+const t = LANGUAGES[lang].strings
 document.documentElement.lang = lang
 
 // --- Renderer ----------------------------------------------------------------
@@ -116,7 +118,7 @@ document.title = `Lidscape ${cityName}`
 // The language picker reloads the page in the new language and remembers it.
 const langPicker = document.getElementById('lang')
 langPicker.setAttribute('aria-label', t.lang)
-for (const [code, name] of Object.entries(LANGS)) langPicker.add(new Option(name, code, false, code === lang))
+for (const [code, l] of Object.entries(LANGUAGES)) langPicker.add(new Option(l.name, code, false, code === lang))
 langPicker.addEventListener('change', () => {
   try {
     localStorage.setItem(LANG_KEY, langPicker.value)

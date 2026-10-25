@@ -1,0 +1,30 @@
+// Svenska. One of the two base languages: every city, theme and variant has
+// its text in Swedish and English.
+export const sv = {
+  name: 'Svenska',
+  strings: {
+    title: 'Lidscape <em>{city}</em>',
+    lang: 'Språk',
+    city: 'Stad',
+    theme: 'Tema',
+    variant: 'Variant',
+    variantNone: 'Ingen variant',
+    lid: 'Lock',
+    face: 'Ansikte',
+    hand: 'Hand',
+    progress: 'Öppna boken',
+    cameraOn: 'Slå på kamera',
+    cameraOff: 'Stäng av kamera',
+    cameraLoading: 'Startar kamera …',
+    cameraError: 'Kunde inte starta kameran',
+    lightsOn: 'Tänd ljuset',
+    lightsOff: 'Släck ljuset',
+    hintManual: 'Scrolla eller dra i reglaget för att öppna boken.',
+    hintLid: 'Locket styr boken. Öppna och stäng din MacBook.',
+    hintHand: 'Öppen hand tänder, knuten hand släcker.',
+    hintNoSensor: 'Den här Macen har ingen locksensor som Lidscape kan läsa. Scrolla eller dra i reglaget.',
+    hintLowQuality: 'Lägre bildkvalitet, så att bilden går jämnt på den här datorn.',
+    noCamera: 'Ingen kamera',
+    noWebgl: 'Lidscape behöver WebGL 2, och den här webbläsaren eller datorn saknar det.',
+  },
+}

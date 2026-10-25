@@ -1,4 +1,4 @@
-# Add a city, a theme or a variant
+# Add a city, a theme, a variant or a language
 
 By opening a pull request you agree that your contribution is licensed as the
 rest of the repository: code under MIT (`LICENSE`), cities, themes, variants and research
@@ -7,7 +7,7 @@ link them in the research file instead of copying them in.
 
 Lidscape grows one city at a time, and every city comes in as a pull request.
 Themes (the artistic form, such as Miniatyr) and variants (an occasion, such
-as Jul) come in the same way.
+as Jul) come in the same way, and so do languages.
 A good city is one that a local recognizes in two seconds, from the shape of
 its skyline alone.
 
@@ -135,3 +135,26 @@ Rules for variants:
 
 Theme and variant settings share the URL, so their ids must differ:
 `?theme=miniature&focus=0.4&variant=christmas&snow=0.3`.
+
+# Add a language
+
+The page is in English and Swedish. English is the default, and the page
+follows the Mac's language when it knows it. A new language is one file and
+two app files:
+
+1. Copy `src/lang/en.js` to `src/lang/<code>.js`, where `<code>` is the
+   two-letter ISO 639-1 code, such as `de`. Translate every string, and give
+   `name` in the language itself (`Deutsch`). List it in `src/lang/index.js`.
+2. Add `<string><code></string>` to `CFBundleLocalizations` in
+   `app/src-tauri/Info.plist`. Without it, a Mac in that language opens the
+   app in English.
+3. Write `app/src-tauri/locales/<code>.lproj/InfoPlist.strings` with the camera
+   question (`NSCameraUsageDescription`), and map it in `bundle.macOS.files` in
+   `app/src-tauri/tauri.conf.json`, as for `sv`.
+4. Optionally, translate city labels and theme and variant names: add your
+   code next to `sv` and `en`, such as `{ sv: 'Snö', en: 'Snow', de: 'Schnee' }`.
+   Text without your language shows in English.
+5. Run `node tools/check-cities.mjs` until it prints OK, and look at
+   `?lang=<code>` in a browser.
+
+Every city, theme and variant must have its text in both English and Swedish.
