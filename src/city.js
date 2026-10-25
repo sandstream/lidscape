@@ -4,7 +4,6 @@
 
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { Reflector } from 'three/addons/objects/Reflector.js'
 import { rng } from './random.js'
 import { buildEffects } from './effects.js'
 import { paintFacades } from './facades.js'
@@ -566,18 +565,24 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
   water.receiveShadow = true
   root.add(water)
 
-  // The city mirrored in the water, drawn again from below the surface so it
-  // follows the parallax. Small moving ripples break it up; the water's own
-  // colour shows through. Slow Macs keep the flat water (setReflections).
-  const scale = Math.min(devicePixelRatio, 2) * 0.5
-  const mirror = new Reflector(new THREE.PlaneGeometry(240, waterDepth), {
-    textureWidth: Math.round(innerWidth * scale),
-    textureHeight: Math.round(innerHeight * scale),
-    clipBias: 0.003,
-    multisample: 0,
-    shader: WATER_SHADER,
-  })
+  // The city mirrored in the water. renderReflection() flips the whole city in
+  // the water plane and draws it with the real camera into a texture; the water
+  // then reads that texture at its own screen position. Unlike three's
+  // Reflector, which turns its camera upside down and so breaks the off-axis
+  // frustum, this stays right however far the head moves. Small moving ripples
+  // break it up; the water's own colour shows through. Slow Macs keep the flat
+  // water (setReflections).
+  const reflection = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType })
+  const mirror = new THREE.Mesh(
+    new THREE.PlaneGeometry(240, waterDepth),
+    new THREE.ShaderMaterial({
+      ...WATER_SHADER,
+      uniforms: THREE.UniformsUtils.clone(WATER_SHADER.uniforms),
+    })
+  )
+  mirror.material.uniforms.tReflection.value = reflection.texture
   mirror.material.uniforms.water.value = new THREE.Color(def.water.color)
+  mirror.material.uniforms.span.value.set(def.water.zFrom, def.water.zTo)
   mirror.rotation.x = -Math.PI / 2
   mirror.position.set(0, 0.015, def.water.zFrom + waterDepth / 2)
   root.add(mirror)
@@ -699,6 +704,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     floor,
     paper,
     cardDepth: CARD_DEPTH,
+    water: mirror.material.uniforms,
     random: rng(def.id.length * 977),
     setting: (id, fallback) => settings[id] ?? fallback,
   })
@@ -765,46 +771,101 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     mirror.visible = on
   }
 
-  return { update, pick, setReflections }
+  // Draws the mirrored city into the reflection texture. Call before the frame,
+  // with the frame's camera. The city is flipped in place at the water line, so
+  // everything it animates stays in step, then put back.
+  const notMirrored = [floor, water, mirror, ...streaks.map((s) => s.mesh)]
+  const size = new THREE.Vector2()
+  function renderReflection(renderer, camera) {
+    if (!mirror.visible) return
+    renderer.getDrawingBufferSize(size)
+    const w = Math.max(1, Math.round(size.x / 2))
+    const h = Math.max(1, Math.round(size.y / 2))
+    if (reflection.width !== w || reflection.height !== h) reflection.setSize(w, h)
+    mirror.material.uniforms.resolution.value.copy(size)
+
+    const shown = notMirrored.map((o) => o.visible)
+    notMirrored.forEach((o) => (o.visible = false))
+    root.scale.y = -1
+    root.updateMatrixWorld(true)
+    const autoShadows = renderer.shadowMap.autoUpdate
+    renderer.shadowMap.autoUpdate = false
+    const target = renderer.getRenderTarget()
+    renderer.setRenderTarget(reflection)
+    renderer.clear()
+    renderer.render(scene, camera)
+    renderer.setRenderTarget(target)
+    renderer.shadowMap.autoUpdate = autoShadows
+    root.scale.y = 1
+    root.updateMatrixWorld(true)
+    notMirrored.forEach((o, i) => (o.visible = shown[i]))
+  }
+
+  return { update, pick, setReflections, renderReflection }
 }
 
-// Water: the mirrored city, shifted by small travelling ripples, mixed with the
-// water's colour and darker towards the viewer. Output stays linear; the
-// composer's output pass maps tone and colour space.
+// Water: the mirrored city read at the fragment's own screen position, shifted
+// by long slow swells and softened with three taps, mixed with the water's
+// colour and fading towards the viewer. Output stays linear; the composer's
+// output pass maps tone and colour space.
 const WATER_SHADER = {
   name: 'LidscapeWater',
   uniforms: {
-    color: { value: null },
-    tDiffuse: { value: null },
-    textureMatrix: { value: null },
+    tReflection: { value: null },
+    resolution: { value: new THREE.Vector2(1, 1) },
     water: { value: null },
+    span: { value: new THREE.Vector2(-8, 6) },
     time: { value: 0 },
+    ice: { value: 0 },
   },
   vertexShader: `
-    uniform mat4 textureMatrix;
-    varying vec4 vUv;
     varying vec3 vWorld;
+    varying vec3 vLocal;
     void main() {
-      vUv = textureMatrix * vec4(position, 1.0);
       vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+      vLocal = position;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse;
+    uniform sampler2D tReflection;
+    uniform vec2 resolution;
     uniform vec3 water;
+    uniform vec2 span;
     uniform float time;
-    varying vec4 vUv;
+    uniform float ice;
     varying vec3 vWorld;
+    varying vec3 vLocal;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    }
     void main() {
-      // Long, slow swells rather than fine chop, and three taps down the
-      // surface so the mirror softens as real water does.
-      float wave = sin(vWorld.z * 1.4 + time * 1.1) * 0.5 + sin(vWorld.x * 0.35 + vWorld.z * 2.2 - time * 0.8) * 0.5;
-      vec4 uv = vUv;
-      uv.x += wave * 0.003 * uv.w;
-      vec4 dy = vec4(0.0, 0.004 * uv.w, 0.0, 0.0);
-      vec3 mirrored = (texture2DProj(tDiffuse, uv).rgb + texture2DProj(tDiffuse, uv + dy).rgb + texture2DProj(tDiffuse, uv - dy).rgb) / 3.0;
-      float near = smoothstep(-8.0, 6.0, vWorld.z);
+      // Depth along the water, 0 at the quay and 1 at the viewer.
+      float near = clamp((-vLocal.y + (span.y - span.x) * 0.5) / (span.y - span.x), 0.0, 1.0);
+      // Far water is seen almost edge-on, so the same swell packs into a few
+      // pixels there: calm it with distance or it reads as a zigzag.
+      float wave = sin(vWorld.z * 0.7 + time * 0.9) * 0.5 + sin(vWorld.x * 0.3 + vWorld.z * 1.1 - time * 0.7) * 0.5;
+      vec2 uv = gl_FragCoord.xy / resolution;
+      uv.x += wave * 0.004 * (0.15 + 0.85 * near * near);
+      vec2 dy = vec2(0.0, 0.003);
+      vec3 mirrored = (texture2D(tReflection, uv).rgb + texture2D(tReflection, uv + dy).rgb + texture2D(tReflection, uv - dy).rgb) / 3.0;
       vec3 col = mix(water, mirrored * 0.72, 0.62 - near * 0.25);
+      if (ice > 0.0) {
+        // Floes: broken noise, more of it along the quay; cracks where floes meet.
+        vec2 p = vWorld.xz * vec2(0.45, 0.9);
+        float n = noise(p) * 0.6 + noise(p * 2.3 + 7.0) * 0.3 + noise(p * 6.0) * 0.1;
+        float edge = 1.0 - near;
+        float cover = ice * 1.05 + edge * edge * ice * 0.5;
+        float threshold = 1.0 - cover;
+        float floe = smoothstep(threshold - 0.015, threshold + 0.015, n);
+        float crack = 1.0 - smoothstep(0.0, 0.02, abs(n - threshold - 0.06)) * 0.5;
+        vec3 iceCol = mix(vec3(0.42, 0.46, 0.52), vec3(0.58, 0.62, 0.68), noise(p * 3.0)) * crack;
+        iceCol += mirrored * 0.12;
+        col = mix(col, iceCol, floe);
+      }
       gl_FragColor = vec4(col, 1.0);
     }`,
 }

@@ -5,6 +5,7 @@
 export const TRAITS = {
   snow: 'Snow falls and settles in winter',
   adventStars: 'Lit paper stars hang in windows in December',
+  ice: 'Ice forms on the water in cold winters, from floes to frozen bays',
 }
 
 export function allows(city, trait) {
