@@ -501,7 +501,7 @@ function windowMesh(windows, z, r, dark = WINDOW_DARK, litShare = 1) {
   return { mesh, thresholds, flicker }
 }
 
-export function buildCity(def, scene, floorY, { theme = null, settings = {} } = {}) {
+export function buildCity(def, scene, floorY, { variant = null, settings = {} } = {}) {
   const r = rng(def.id.length * 131)
   const edgeShade = (tint) => '#' + new THREE.Color(tint).multiplyScalar(def.edgeShade ?? 0.78).getHexString()
   const windowDark = new THREE.Color(def.windows?.dark ?? WINDOW_DARK)
@@ -693,7 +693,7 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
   glow.position.set(0, 7, def.water.zFrom + 2)
   root.add(glow)
 
-  const updateEffects = buildEffects(theme, def, {
+  const updateEffects = buildEffects(variant, def, {
     root,
     layers,
     floor,

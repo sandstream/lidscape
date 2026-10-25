@@ -1,6 +1,6 @@
-## New city, theme or change
+## New city, theme, variant or change
 
-City or theme: <!-- e.g. Göteborg, Jul -->
+City, theme or variant: <!-- e.g. Göteborg, Miniatyr, Jul -->
 Viewpoint: <!-- the real place the skyline is seen from -->
 
 ## Checklist

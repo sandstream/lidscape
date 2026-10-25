@@ -1,4 +1,4 @@
-// Theme effects (see src/themes/). Each builder gets the built city and returns
+// Variant effects (see src/variants/). Each builder gets the built city and returns
 // an update function. Effects on a card are added to its pivot, so they fold with
 // it; weather lives in the space between the cards, so it follows the parallax.
 
@@ -251,10 +251,10 @@ function windowStars(fx, ctx) {
 const EFFECTS = { snowfall, snowcaps, stringLights, windowStars }
 export const EFFECT_TYPES = Object.keys(EFFECTS)
 
-// Builds the theme's effects that this city allows, and returns one update.
-export function buildEffects(theme, city, ctx) {
-  if (!theme) return () => {}
-  const updates = theme.effects
+// Builds the variant's effects that this city allows, and returns one update.
+export function buildEffects(variant, city, ctx) {
+  if (!variant) return () => {}
+  const updates = variant.effects
     .filter((fx) => allows(city, fx.requires))
     .map((fx) => EFFECTS[fx.type](fx, ctx))
   return (state) => updates.forEach((u) => u(state))

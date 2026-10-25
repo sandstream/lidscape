@@ -1,12 +1,13 @@
-# Add a city or a theme
+# Add a city, a theme or a variant
 
 By opening a pull request you agree that your contribution is licensed as the
-rest of the repository: code under MIT (`LICENSE`), cities, themes and research
+rest of the repository: code under MIT (`LICENSE`), cities, themes, variants and research
 under CC BY 4.0 (`LICENSE-CONTENT`). Use only photos and sources you may use;
 link them in the research file instead of copying them in.
 
 Lidscape grows one city at a time, and every city comes in as a pull request.
-Themes, such as Christmas, come in the same way.
+Themes (the artistic form, such as Miniatyr) and variants (an occasion, such
+as Jul) come in the same way.
 A good city is one that a local recognizes in two seconds, from the shape of
 its skyline alone.
 
@@ -54,7 +55,7 @@ traits: { snow: true, adventStars: true },   // Stockholm
 traits: { snow: false, adventStars: false }, // Nairobi
 ```
 
-Themes read the traits, so Christmas in Nairobi gets string lights but no snow.
+Variants read the traits, so Christmas in Nairobi gets string lights but no snow.
 
 Give each landmark a hover label with its name and one line of facts, taken
 from the research file: `{ name: 'Stadshuset', note: '1923 · tornet 106 m' }`.
@@ -80,8 +81,32 @@ lights on. The `Cities` check runs the same script on GitHub.
 
 # Add a theme
 
-A theme is a file in `src/themes/`, listed in `src/themes/index.js`. It lists
-effects from `src/effects.js` and the settings people can change:
+A theme is the artistic form of the whole picture, and it works for every city:
+`paper` draws the pop-up book as it is, `miniature` turns it into a tilt-shift
+model. A theme is a file in `src/themes/`, listed in `src/themes/index.js`. It
+names post steps from `src/post.js` and the settings people can change:
+
+```js
+export const miniature = {
+  id: 'miniature',
+  name: 'Miniatyr',
+  post: {
+    tiltShift: { setting: 'focus', blur: 7, passes: 2 },
+    grade: { saturation: 1.22, contrast: 1.1, vignette: 0.35 },
+  },
+  settings: [{ id: 'focus', label: 'Skärpa i höjdled', min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
+}
+```
+
+A new post step goes in `src/post.js` and in `POST_STEPS` in
+`tools/check-cities.mjs`. Measure it: the page must keep its frame rate on an
+Apple Silicon Mac, and a slow Mac falls back to lower quality.
+
+# Add a variant
+
+A variant is an occasion laid over any theme, such as Christmas. It is a file
+in `src/variants/`, listed in `src/variants/index.js`. It lists effects from
+`src/effects.js` and its settings:
 
 ```js
 export const christmas = {
@@ -95,9 +120,9 @@ export const christmas = {
 }
 ```
 
-Rules for themes:
+Rules for variants:
 
-1. Realism comes from the city, not the theme. An effect that needs something
+1. Realism comes from the city, not the variant. An effect that needs something
    the city may not have names it with `requires`. If the trait does not exist
    yet, add it to `src/traits.js` and set it for every city, with sources.
 2. Effects must work with the parallax. Put weather in the space between the
@@ -105,4 +130,5 @@ Rules for themes:
 3. A new effect type goes in `src/effects.js` and in `EFFECT_TYPES` in
    `tools/check-cities.mjs`.
 
-Settings come from the URL as well: `?theme=christmas&snow=0.3`.
+Theme and variant settings share the URL, so their ids must differ:
+`?theme=miniature&focus=0.4&variant=christmas&snow=0.3`.

@@ -19,11 +19,13 @@ CONTRIBUTING.md step by step:
    must stand free against the sky. Fix and look again.
 5. Save a screenshot as `docs/<id>.png` and offer to open a pull request.
 
-## "Make a <theme> theme"
+## "Make a <style> theme" or "Make a <occasion> variant"
 
-Follow "Add a theme" in CONTRIBUTING.md. Never let a theme add something a city
-lacks: use `requires` and a trait from `src/traits.js`. Check the theme on a
-city with the trait and on one without it.
+A theme is an artistic form for the whole picture (Papper, Miniatyr). A variant
+is an occasion over any theme (Jul). Follow "Add a theme" or "Add a variant" in
+CONTRIBUTING.md. Never let a variant add something a city lacks: use
+`requires` and a trait from `src/traits.js`. Check a variant on a city with the
+trait and on one without it, and check a theme's frame time.
 
 ## Rules
 
