@@ -1,0 +1,17 @@
+[package]
+name = "lidscape"
+version = "0.1.0"
+description = "Lidscape: a pop-up paper city behind your screen"
+authors = ["Peter Sandström"]
+edition = "2021"
+
+[lib]
+name = "lidscape_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+log = "0.4"

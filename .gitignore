@@ -2,3 +2,7 @@
 node_modules/
 *.png
 !docs/*.png
+!app/design/icon.png
+!app/src-tauri/icons/*.png
+.playwright-mcp/
+.kit-triage.jsonl

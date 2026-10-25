@@ -10,14 +10,18 @@ import Foundation
 import IOKit.hid
 import Network
 
+setvbuf(stdout, nil, _IOLBF, 0) // show log lines at once, also when output goes to a file
+
 let port: NWEndpoint.Port = 8787
 let pollInterval = 1.0 / 30.0
 
 final class LidSensor {
+    // The manager must outlive init: releasing it closes the device and every read fails.
+    private let manager: IOHIDManager
     private let device: IOHIDDevice
 
     init?() {
-        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let matching: [String: Any] = [
             kIOHIDVendorIDKey: 0x05AC,
             kIOHIDProductIDKey: 0x8104,
@@ -44,9 +48,12 @@ final class LidSensor {
     }
 }
 
-guard let sensor = LidSensor() else {
+// Without a sensor the bridge still answers, so the page can tell the user why
+// the lid does nothing instead of waiting for a bridge that never comes.
+// LIDBRIDGE_NO_SENSOR=1 acts as a Mac without a sensor, to test that path.
+let sensor = ProcessInfo.processInfo.environment["LIDBRIDGE_NO_SENSOR"] == "1" ? nil : LidSensor()
+if sensor == nil {
     FileHandle.standardError.write("LidBridge: no lid angle sensor found on this Mac.\n".data(using: .utf8)!)
-    exit(1)
 }
 
 // WebSocket server, bound to localhost only.
@@ -61,7 +68,11 @@ var clients: [ObjectIdentifier: NWConnection] = [:]
 var lastAngle: Int?
 
 func send(_ angle: Int, to connection: NWConnection) {
-    let data = Data("{\"angle\":\(angle)}".utf8)
+    sendText("{\"angle\":\(angle)}", to: connection)
+}
+
+func sendText(_ text: String, to connection: NWConnection) {
+    let data = Data(text.utf8)
     let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
     let context = NWConnection.ContentContext(identifier: "angle", metadata: [metadata])
     connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { error in
@@ -75,6 +86,7 @@ listener.newConnectionHandler = { connection in
         switch state {
         case .ready:
             clients[id] = connection
+            if sensor == nil { sendText("{\"sensor\":false}", to: connection) }
             if let lastAngle { send(lastAngle, to: connection) }
             print("LidBridge: client connected (\(clients.count))")
         case .failed, .cancelled:
@@ -97,7 +109,7 @@ listener.start(queue: .main)
 print("LidBridge: streaming lid angle on ws://127.0.0.1:\(port)")
 
 Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { _ in
-    guard let angle = sensor.angle(), angle != lastAngle else { return }
+    guard let angle = sensor?.angle(), angle != lastAngle else { return }
     lastAngle = angle
     clients.values.forEach { send(angle, to: $0) }
 }

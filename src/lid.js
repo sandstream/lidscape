@@ -7,7 +7,7 @@ const OPEN_DEG = 105
 const RETRY_MS = 3000
 
 export function connectLid(onChange) {
-  const state = { connected: false, angle: null, progress: null }
+  const state = { connected: false, noSensor: false, angle: null, progress: null }
   let socket
 
   function open() {
@@ -18,7 +18,7 @@ export function connectLid(onChange) {
       return
     }
     socket.onopen = () => {
-      state.connected = true
+      state.connected = !state.noSensor
       onChange(state)
     }
     socket.onmessage = (event) => {
@@ -27,6 +27,13 @@ export function connectLid(onChange) {
         msg = JSON.parse(event.data)
       } catch {
         console.warn('Lidscape: ignored malformed lid message', event.data)
+        return
+      }
+      // The bridge runs but this Mac has no sensor it can read (M1, desktop Macs).
+      if (msg.sensor === false) {
+        state.noSensor = true
+        state.connected = false
+        onChange(state)
         return
       }
       if (typeof msg.angle !== 'number') return
