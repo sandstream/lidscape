@@ -3,7 +3,7 @@
 
 export const christmas = {
   id: 'christmas',
-  name: 'Jul',
+  name: { sv: 'Jul', en: 'Christmas' },
   effects: [
     { type: 'stringLights', colors: ['#ffd9a0', '#ffe9c4', '#ffcf87'] },
     { type: 'windowStars', requires: 'adventStars', share: 0.09, color: '#ffd28a' },
@@ -11,5 +11,5 @@ export const christmas = {
     { type: 'snowcaps', requires: 'snow', setting: 'snow' },
     { type: 'ice', requires: 'ice', setting: 'snow' },
   ],
-  settings: [{ id: 'snow', label: 'Snö', min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
+  settings: [{ id: 'snow', label: { sv: 'Snö', en: 'Snow' }, min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
 }

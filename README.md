@@ -53,6 +53,7 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 | `?progress=0.6` | Start value for the fold (0 to 1) |
 | `?lights=off` | Start with the lights off |
 | `?quality=low` | Skip the speed check and draw at lower quality (or `high`) |
+| `?lang=en` | Language: `sv` or `en`. Without it the page uses the last choice, then the Mac's language |
 
 ## How it works
 

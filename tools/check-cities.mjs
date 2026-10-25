@@ -7,6 +7,7 @@ import { CITIES } from '../src/cities/index.js'
 import { THEMES } from '../src/themes/index.js'
 import { VARIANTS } from '../src/variants/index.js'
 import { TRAITS } from '../src/traits.js'
+import { LANGS } from '../src/strings.js'
 
 // Keep in step with BUILDERS in src/city.js.
 const ITEM_TYPES = ['house', 'tower', 'hill', 'arcade', 'lamp', 'outline']
@@ -17,6 +18,11 @@ const HEX = /^#[0-9a-f]{6}$/i
 const errors = []
 const fail = (where, msg) => errors.push(`${where}: ${msg}`)
 const finite = (v) => typeof v === 'number' && Number.isFinite(v)
+// Shown text: one string for every language, or { sv, en } with each language filled in.
+const text = (v) =>
+  (typeof v === 'string' && v.length > 0) ||
+  (v !== null && typeof v === 'object' && Object.keys(LANGS).every((l) => typeof v[l] === 'string' && v[l]) && Object.keys(v).every((l) => l in LANGS))
+const TEXT_RULE = `must be a string or { ${Object.keys(LANGS).join(', ')} }`
 
 const files = readdirSync(new URL('../src/cities/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
 const ids = CITIES.map((c) => c.id)
@@ -32,7 +38,7 @@ for (const city of CITIES) {
   seen.add(city.id)
   if (!files.includes(`${city.id}.js`)) fail(at, `src/cities/${city.id}.js must hold this city`)
   if (!existsSync(new URL(`../docs/cities/${city.id}.md`, import.meta.url))) fail(at, `docs/cities/${city.id}.md with sources is missing`)
-  if (!city.name) fail(at, 'name is missing')
+  if (!text(city.name)) fail(at, `name ${TEXT_RULE}`)
   for (const trait of Object.keys(TRAITS)) {
     if (typeof city.traits?.[trait] !== 'boolean') fail(at, `traits.${trait} must be true or false (${TRAITS[trait]}), with a source`)
   }
@@ -55,7 +61,8 @@ for (const city of CITIES) {
       const iw = `${lw} item ${ii} (${item.type})`
       if (!ITEM_TYPES.includes(item.type)) return fail(iw, `type must be one of ${ITEM_TYPES.join(', ')}`)
       if (item.tint && !HEX.test(item.tint)) fail(iw, 'tint must be a #rrggbb colour')
-      if (item.label && (typeof item.label.name !== 'string' || !item.label.name)) fail(iw, 'label needs a name')
+      if (item.label && !text(item.label.name)) fail(iw, `label name ${TEXT_RULE}`)
+      if (item.label?.note !== undefined && !text(item.label.note)) fail(iw, `label note ${TEXT_RULE}`)
       if (item.type !== 'outline') return
       const pts = item.points
       if (!Array.isArray(pts) || pts.length < 3) return fail(iw, 'points needs at least 3 [x, y] pairs')
@@ -71,12 +78,12 @@ for (const city of CITIES) {
   })
 }
 
-const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality']
+const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality', 'lang']
 const settingIds = new Map()
 function checkSettings(at, list) {
   for (const st of list ?? []) {
     const sw = `${at} setting ${st.id}`
-    if (!st.label) fail(sw, 'label is missing')
+    if (!text(st.label)) fail(sw, `label ${TEXT_RULE}`)
     if (![st.min, st.max, st.step, st.default].every(finite) || st.min >= st.max || st.default < st.min || st.default > st.max) fail(sw, 'needs min < max, step, and a default inside the range')
     if (st.requires && !(st.requires in TRAITS)) fail(sw, `requires unknown trait ${st.requires}`)
     if (RESERVED.includes(st.id)) fail(sw, 'id clashes with a page URL parameter')
@@ -90,7 +97,7 @@ function checkFolder(folder, list, label) {
   for (const f of files) if (!listed.includes(f.replace(/\.js$/, ''))) fail(`${folder}/${f}`, `file is not listed in src/${folder}/index.js`)
   for (const x of list) {
     if (!/^[a-z0-9-]+$/.test(x.id ?? '')) fail(`${label} ${x.id}`, 'id must be lower case letters, digits and hyphens')
-    if (!x.name) fail(`${label} ${x.id}`, 'name is missing')
+    if (!text(x.name)) fail(`${label} ${x.id}`, `name ${TEXT_RULE}`)
   }
   return listed
 }

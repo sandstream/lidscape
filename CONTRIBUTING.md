@@ -58,8 +58,11 @@ traits: { snow: false, adventStars: false }, // Nairobi
 Variants read the traits, so Christmas in Nairobi gets string lights but no snow.
 
 Give each landmark a hover label with its name and one line of facts, taken
-from the research file: `{ name: 'Stadshuset', note: '1923 · tornet 106 m' }`.
+from the research file. The page is in Swedish and English, so give text that
+differs as `{ sv, en }`, and a plain string when it is the same in both:
+`{ name: { sv: 'Stadshuset', en: 'City Hall' }, note: { sv: '1923 · tornet 106 m', en: '1923 · tower 106 m' } }`.
 The `labelled()` helper in `stockholm.js` puts it on every piece of a landmark.
+The same rule applies to the names and setting labels of themes and variants.
 
 Three rules keep a skyline readable:
 
@@ -89,12 +92,12 @@ names post steps from `src/post.js` and the settings people can change:
 ```js
 export const miniature = {
   id: 'miniature',
-  name: 'Miniatyr',
+  name: { sv: 'Miniatyr', en: 'Miniature' },
   post: {
     tiltShift: { setting: 'focus', blur: 7, passes: 2 },
     grade: { saturation: 1.22, contrast: 1.1, vignette: 0.35 },
   },
-  settings: [{ id: 'focus', label: 'Skärpa i höjdled', min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
+  settings: [{ id: 'focus', label: { sv: 'Skärpa i höjdled', en: 'Sharp band height' }, min: 0.15, max: 0.75, step: 0.01, default: 0.3 }],
 }
 ```
 
@@ -111,12 +114,12 @@ in `src/variants/`, listed in `src/variants/index.js`. It lists effects from
 ```js
 export const christmas = {
   id: 'christmas',
-  name: 'Jul',
+  name: { sv: 'Jul', en: 'Christmas' },
   effects: [
     { type: 'stringLights', colors: ['#ffd9a0'] },
     { type: 'snowfall', requires: 'snow', setting: 'snow' },
   ],
-  settings: [{ id: 'snow', label: 'Snö', min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
+  settings: [{ id: 'snow', label: { sv: 'Snö', en: 'Snow' }, min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
 }
 ```
 
