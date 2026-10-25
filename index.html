@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lidscape</title>
+  <link rel="stylesheet" href="src/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <aside id="hud">
+    <h1 id="hud-title"></h1>
+    <ul id="hud-status">
+      <li data-source="lid"><span class="dot"></span><span class="label"></span></li>
+      <li data-source="face"><span class="dot"></span><span class="label"></span></li>
+      <li data-source="hand"><span class="dot"></span><span class="label"></span></li>
+    </ul>
+    <label id="progress-label" for="progress"></label>
+    <input id="progress" type="range" min="0" max="1" step="0.001" value="0">
+    <div id="hud-actions">
+      <button id="camera-btn" type="button"></button>
+      <button id="lights-btn" type="button"></button>
+    </div>
+    <p id="hud-hint"></p>
+  </aside>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+:root {
+  --ink: #131416;
+  --creme: #f1f1e6;
+  --violet: #663fff;
+  --peach: #f4978e;
+  --glass: rgba(19, 20, 22, 0.62);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1c1834;
+  color: var(--creme);
+  font: 14px/1.2 "Neue Haas Grotesk Display Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: min(280px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  text-align: left;
+  transition: opacity 0.4s;
+}
+
+#hud.idle { opacity: 0.15; }
+#hud:hover { opacity: 1; }
+
+#hud h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+#hud h1 em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--violet), var(--peach));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+#hud-status {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+#hud-status li { display: flex; align-items: center; gap: 6px; }
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(241, 241, 230, 0.25);
+}
+
+[data-state="on"] .dot { background: var(--peach); box-shadow: 0 0 8px var(--peach); }
+[data-state="wait"] .dot { background: var(--violet); }
+
+#progress { width: 100%; accent-color: var(--violet); }
+#progress:disabled { opacity: 0.4; }
+
+#hud-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+button {
+  font: inherit;
+  color: var(--creme);
+  background: transparent;
+  border: 1px solid rgba(241, 241, 230, 0.35);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--creme); }
+button:focus-visible, #progress:focus-visible { outline: 2px solid var(--peach); outline-offset: 2px; }
+
+#hud-hint { margin: 0; opacity: 0.7; font-size: 12px; line-height: 1.3; }
