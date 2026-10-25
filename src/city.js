@@ -277,12 +277,24 @@ function hill(item, r) {
   }
   shape.lineTo(x1, 0)
   shape.lineTo(x0, 0)
+  // Windows only where the drawn ridge is high enough over them: the curve
+  // dips between the given heights, so check the outline itself.
+  const outline = shape.getPoints(12)
+  const ridgeAt = (x) => {
+    let best = 0
+    for (let i = 1; i < outline.length; i++) {
+      const a = outline[i - 1]
+      const b = outline[i]
+      if ((a.x - x) * (b.x - x) <= 0 && a.x !== b.x) best = Math.max(best, a.y + ((x - a.x) / (b.x - a.x)) * (b.y - a.y))
+    }
+    return best
+  }
   const windows = []
   for (let i = 0; i < 70; i++) {
-    const t = r()
-    const idx = t * (heights.length - 1)
-    const hy = heights[Math.floor(idx)] * 0.85
-    windows.push({ x: x0 + t * (x1 - x0), y: 0.8 + r() * (hy - 1.2), w: 0.3, h: 0.42 })
+    const x = x0 + r() * (x1 - x0)
+    const top = Math.min(ridgeAt(x - 0.2), ridgeAt(x + 0.2)) - 0.6
+    if (top < 1.2) continue
+    windows.push({ x, y: 0.8 + r() * (top - 1.2), w: 0.3, h: 0.42 })
   }
   return { shape, windows }
 }
@@ -622,7 +634,12 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     // bright lines flickering round dark roofs.
     const edges = new Map()
     const hits = []
-    for (const item of layerDef.items) {
+    // Each item on a card stands a hair in front of the one before it. Shapes
+    // that overlap on a card would otherwise lie in one plane and flicker as
+    // the card turns, letting a house behind show through one in front.
+    const ITEM_STEP = 0.004
+    for (const [itemIndex, item] of layerDef.items.entries()) {
+      const itemDz = itemIndex * ITEM_STEP
       const built = BUILDERS[item.type](item, r)
       const parts = built.parts ?? [{ shape: built.shape }]
       const tint = item.tint || layerDef.tint || def.palette[Math.floor(r() * def.palette.length)]
@@ -634,7 +651,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
           for (const sh of list) hits.push({ pts: sh.getPoints(8), label: item.label ?? null })
         }
         const geo = extrude(list, label)
-        if (part.dz) geo.translate(0, 0, part.dz)
+        geo.translate(0, 0, itemDz + (part.dz ?? 0))
         const key = part.facade && built.facades ? FACADE : part.tint || tint
         const { caps, sides } = splitCapsSides(geo)
         if (!pieces.has(key)) pieces.set(key, [])
@@ -644,7 +661,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
         edges.get(edgeKey).push(sides)
       }
       if (built.facades) regions.push(...built.facades.map((f) => ({ ...f, tint: f.tint ?? tint })))
-      windows.push(...built.windows)
+      windows.push(...built.windows.map((w) => ({ ...w, dz: (w.dz ?? 0) + itemDz })))
     }
     // One mesh per colour per card keeps draw calls low however much detail there
     // is: the facades share one printed atlas, the card edges one paper core.

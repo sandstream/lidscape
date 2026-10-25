@@ -16,5 +16,10 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 
+class Server(http.server.ThreadingHTTPServer):
+    # The page loads many modules at once; the default backlog of 5 resets some.
+    request_queue_size = 64
+
+
 print(f"Lidscape on http://localhost:{PORT}")
-http.server.ThreadingHTTPServer(("127.0.0.1", PORT), functools.partial(NoCache, directory=ROOT)).serve_forever()
+Server(("127.0.0.1", PORT), functools.partial(NoCache, directory=ROOT)).serve_forever()

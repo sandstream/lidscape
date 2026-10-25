@@ -145,7 +145,8 @@ function snowcaps(fx, ctx) {
         card.mesh.geometry = new THREE.BufferGeometry()
         continue
       }
-      const geo = new THREE.ExtrudeGeometry(caps, { depth: ctx.cardDepth + 0.08, bevelEnabled: false })
+      // Deep enough to cover the small step each item stands in front of the last.
+      const geo = new THREE.ExtrudeGeometry(caps, { depth: ctx.cardDepth + 0.3, bevelEnabled: false })
       geo.translate(0, 0, -0.04)
       card.mesh.geometry = geo
     }
@@ -235,9 +236,9 @@ function windowStars(fx, ctx) {
       if (w.w < 0.3 || w.h < 0.5 || ctx.random() > fx.share) continue
       const back = new THREE.Mesh(pane, backing)
       back.scale.set(w.w, w.h, 1)
-      back.position.set(w.x, w.y, ctx.cardDepth + 0.025)
+      back.position.set(w.x, w.y, ctx.cardDepth + 0.025 + (w.dz ?? 0))
       const star = new THREE.Mesh(new THREE.ShapeGeometry(starShape(Math.min(w.w, w.h) * 0.62)), mat)
-      star.position.set(w.x, w.y, ctx.cardDepth + 0.035)
+      star.position.set(w.x, w.y, ctx.cardDepth + 0.035 + (w.dz ?? 0))
       layer.pivot.add(back, star)
     }
   }
