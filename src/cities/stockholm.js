@@ -418,19 +418,20 @@ export const stockholm = {
   moon: [32, 40],
   light: { sky: '#b8c4e0', ground: '#3d3029', key: '#ffd2a0', keyIntensity: 2.4, keyFrom: [-40, 22, 35] },
   floor: '#d8c9ad',
-  water: { color: '#4c6683', zFrom: -8, zTo: 6 },
+  // The city stands 15 cm back, so Strömmen has room to mirror it.
+  water: { color: '#4c6683', zFrom: -15, zTo: 6 },
   palette: PAPER,
   traits: { snow: true, adventStars: true },
   layers: [
     {
       // Globen far to the south, the white sphere every Stockholm skyline drawing
       // includes. Seen from Skeppsholmen it hides behind Söder; here it rises above.
-      z: -68,
+      z: -75,
       items: labelled(LABELS.globen, globen(-32)),
     },
     {
       // Södermalm's heights to the south, low Kungsholmen to the north
-      z: -58,
+      z: -65,
       tint: FAR,
       items: [
         // Söder falls away to the east, towards Skanstull, where Globen shows
@@ -441,27 +442,27 @@ export const stockholm = {
     },
     {
       // Riddarholmen and Stadshuset across Riddarfjärden
-      z: -46,
+      z: -53,
       items: [...labelled(LABELS.riddarholmskyrkan, riddarholmskyrkan(-3)), ...labelled(LABELS.stadshuset, stadshuset(20.5))],
     },
     {
       // Church towers over the dark band of Gamla stan's roofs
-      z: -36,
+      z: -43,
       items: [...labelled(LABELS.tyska, tyskaKyrkan(-12)), ...labelled(LABELS.storkyrkan, storkyrkan(2)), ...palaceRow(11, -46, 2, 6.5, 8).map((h) => ({ ...h, tint: MIDDLE }))],
     },
     {
       // Kungliga slottet on the water, and the row behind Skeppsbron
-      z: -26,
+      z: -33,
       items: [...palaceRow(21, -44, 3, 6, 7.4), ...labelled(LABELS.slottet, slottet(12))],
     },
     {
       // Skeppsbron's merchant palaces; Slottsbacken stays open
-      z: -16,
+      z: -23,
       items: palaceRow(31, -42, 3, 5.2, 6.6),
     },
     {
       // Skeppsbron's granite quay
-      z: -8,
+      z: -15,
       items: [
         { type: 'arcade', x0: -50, x1: 50, h: 0.7, archW: 0, tint: '#a19d95' },
         // The quay stands about 2 m over the water; lamps about 4 m, against 20 m houses

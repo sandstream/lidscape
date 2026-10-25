@@ -26,7 +26,7 @@ function discTexture() {
 // behind the glass.
 function snowfall(fx, ctx) {
   const COUNT = 2600
-  const BOX = { x: 52, yTop: 48, zFar: -64, zNear: -1 }
+  const BOX = { x: 56, yTop: 48, zFar: -80, zNear: -1 }
   const r = ctx.random
   const pos = new Float32Array(COUNT * 3)
   const flake = []
@@ -89,20 +89,20 @@ function inside(pt, pts) {
 }
 
 // Snow lying on every roof, ledge and dome that is flat enough to hold it. Edges
-// hidden behind another shape on the same card get none.
+// hidden behind another shape on the same card get none. The setting decides
+// how much: a dusting at the low end, thick cover that also holds on steeper
+// roofs at the high end, and the ground and quay whiten with it.
 function snowcaps(fx, ctx) {
-  const THICK = 0.3
-  const MAX_SLOPE = 0.9
   const mat = ctx.paper('#fbfaff').clone()
-  mat.transparent = true
   const ground = ctx.floor.material.clone()
   const groundBase = ground.color.clone()
   const groundSnow = new THREE.Color('#f1effa')
   ctx.floor.material = ground
 
-  for (const layer of ctx.layers) {
+  // Every edge that faces up, once; the amount picks which ones hold snow.
+  const cards = ctx.layers.map((layer) => {
     const outlines = layer.shapes.map((s) => s.getPoints(16))
-    const caps = []
+    const edges = []
     outlines.forEach((pts, si) => {
       const ccw = signedArea(pts) > 0
       for (let i = 0; i < pts.length; i++) {
@@ -111,32 +111,55 @@ function snowcaps(fx, ctx) {
         const dx = b.x - a.x
         const dy = b.y - a.y
         const up = ccw ? -dx : dx
-        if (up <= 0 || Math.abs(dy) > MAX_SLOPE * Math.abs(dx) || Math.abs(dx) < 0.05) continue
+        if (up <= 0 || Math.abs(dx) < 0.05) continue
+        const slope = Math.abs(dy) / Math.abs(dx)
+        if (slope > 1.4) continue
         const mid = new THREE.Vector2((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.1)
         if (outlines.some((other, oi) => oi !== si && inside(mid, other))) continue
-        const [l, rr] = a.x < b.x ? [a, b] : [b, a]
-        const inset = Math.min(0.12, (rr.x - l.x) * 0.2)
-        const cap = new THREE.Shape()
-        cap.moveTo(l.x - 0.04, l.y - 0.04)
-        cap.lineTo(rr.x + 0.04, rr.y - 0.04)
-        cap.lineTo(rr.x - inset, rr.y + THICK)
-        cap.lineTo(l.x + inset, l.y + THICK)
-        caps.push(cap)
+        edges.push({ l: a.x < b.x ? a : b, r: a.x < b.x ? b : a, slope })
       }
     })
-    if (!caps.length) continue
-    const geo = new THREE.ExtrudeGeometry(caps, { depth: ctx.cardDepth + 0.08, bevelEnabled: false })
-    geo.translate(0, 0, -0.04)
-    const mesh = new THREE.Mesh(geo, mat)
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat)
     mesh.receiveShadow = true
     layer.pivot.add(mesh)
+    return { edges, mesh }
+  })
+
+  function build(amount) {
+    const thick = 0.04 + 0.42 * amount
+    const maxSlope = 0.5 + 0.9 * amount
+    for (const card of cards) {
+      const caps = []
+      for (const { l, r, slope } of card.edges) {
+        if (slope > maxSlope) continue
+        const inset = Math.min(0.12, (r.x - l.x) * 0.2)
+        const cap = new THREE.Shape()
+        cap.moveTo(l.x - 0.04, l.y - 0.04)
+        cap.lineTo(r.x + 0.04, r.y - 0.04)
+        cap.lineTo(r.x - inset, r.y + thick)
+        cap.lineTo(l.x + inset, l.y + thick)
+        caps.push(cap)
+      }
+      card.mesh.geometry.dispose()
+      if (!caps.length) {
+        card.mesh.geometry = new THREE.BufferGeometry()
+        continue
+      }
+      const geo = new THREE.ExtrudeGeometry(caps, { depth: ctx.cardDepth + 0.08, bevelEnabled: false })
+      geo.translate(0, 0, -0.04)
+      card.mesh.geometry = geo
+    }
   }
 
+  let built = -1
   return () => {
     const amount = ctx.setting(fx.setting, 1)
-    mat.opacity = clamp01(amount / 0.25)
     mat.visible = amount > 0.01
-    ground.color.copy(groundBase).lerp(groundSnow, amount * 0.6)
+    if (mat.visible && Math.abs(amount - built) > 0.02) {
+      build(amount)
+      built = amount
+    }
+    ground.color.copy(groundBase).lerp(groundSnow, Math.min(1, amount * 0.9))
   }
 }
 

@@ -4,6 +4,7 @@
 
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { Reflector } from 'three/addons/objects/Reflector.js'
 import { rng } from './random.js'
 import { buildEffects } from './effects.js'
 import { paintFacades } from './facades.js'
@@ -502,8 +503,7 @@ function windowMesh(windows, z, r, dark = WINDOW_DARK, litShare = 1) {
 
 export function buildCity(def, scene, floorY, { theme = null, settings = {} } = {}) {
   const r = rng(def.id.length * 131)
-  // The card's cut edge shows the paper's light core.
-  const edge = new THREE.MeshStandardMaterial({ color: def.paperCore ?? '#f3ebdc', roughness: 1, metalness: 0 })
+  const edgeShade = (tint) => '#' + new THREE.Color(tint).multiplyScalar(def.edgeShade ?? 0.78).getHexString()
   const windowDark = new THREE.Color(def.windows?.dark ?? WINDOW_DARK)
   const litShare = def.windows?.litShare ?? 1
   // Where the sky turns from horizon colour to top colour, in the sky plane's height.
@@ -566,6 +566,22 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
   water.receiveShadow = true
   root.add(water)
 
+  // The city mirrored in the water, drawn again from below the surface so it
+  // follows the parallax. Small moving ripples break it up; the water's own
+  // colour shows through. Slow Macs keep the flat water (setReflections).
+  const scale = Math.min(devicePixelRatio, 2) * 0.5
+  const mirror = new Reflector(new THREE.PlaneGeometry(240, waterDepth), {
+    textureWidth: Math.round(innerWidth * scale),
+    textureHeight: Math.round(innerHeight * scale),
+    clipBias: 0.003,
+    multisample: 0,
+    shader: WATER_SHADER,
+  })
+  mirror.material.uniforms.water.value = new THREE.Color(def.water.color)
+  mirror.rotation.x = -Math.PI / 2
+  mirror.position.set(0, 0.015, def.water.zFrom + waterDepth / 2)
+  root.add(mirror)
+
   // Reflections: warm streaks on the water
   const streakMat = new THREE.MeshBasicMaterial({
     color: new THREE.Color('#ffb46a').multiplyScalar(1.4),
@@ -597,7 +613,9 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
     const shapes = []
     const pieces = new Map()
     const regions = []
-    const edges = []
+    // Cut edges in a darker shade of their own paper: a white core read as
+    // bright lines flickering round dark roofs.
+    const edges = new Map()
     const hits = []
     for (const item of layerDef.items) {
       const built = BUILDERS[item.type](item, r)
@@ -616,7 +634,9 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
         const { caps, sides } = splitCapsSides(geo)
         if (!pieces.has(key)) pieces.set(key, [])
         pieces.get(key).push(caps)
-        edges.push(sides)
+        const edgeKey = part.tint || tint
+        if (!edges.has(edgeKey)) edges.set(edgeKey, [])
+        edges.get(edgeKey).push(sides)
       }
       if (built.facades) regions.push(...built.facades.map((f) => ({ ...f, tint: f.tint ?? tint })))
       windows.push(...built.windows)
@@ -632,8 +652,8 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
       mesh.receiveShadow = true
       pivot.add(mesh)
     }
-    if (edges.length) {
-      const mesh = new THREE.Mesh(mergeGeometries(edges), edge)
+    for (const [key, geos] of edges) {
+      const mesh = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos) : geos[0], paper(edgeShade(key)))
       mesh.castShadow = true
       pivot.add(mesh)
     }
@@ -670,7 +690,7 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
   })
 
   const glow = new THREE.PointLight('#ffb067', 0, 60, 1.5)
-  glow.position.set(0, 7, -6)
+  glow.position.set(0, 7, def.water.zFrom + 2)
   root.add(glow)
 
   const updateEffects = buildEffects(theme, def, {
@@ -717,6 +737,7 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
     moon.material.opacity = night
     streakMat.opacity = lightLevel * 0.35
     glow.intensity = lightLevel * 6
+    mirror.material.uniforms.time.value = time
     for (const st of streaks) st.mesh.scale.x = 0.5 + 0.5 * Math.sin(time * st.speed + st.phase) ** 2
     updateEffects({ progress, lights, lightLevel, time })
   }
@@ -740,7 +761,52 @@ export function buildCity(def, scene, floorY, { theme = null, settings = {} } = 
     return null
   }
 
-  return { update, pick }
+  function setReflections(on) {
+    mirror.visible = on
+  }
+
+  return { update, pick, setReflections }
+}
+
+// Water: the mirrored city, shifted by small travelling ripples, mixed with the
+// water's colour and darker towards the viewer. Output stays linear; the
+// composer's output pass maps tone and colour space.
+const WATER_SHADER = {
+  name: 'LidscapeWater',
+  uniforms: {
+    color: { value: null },
+    tDiffuse: { value: null },
+    textureMatrix: { value: null },
+    water: { value: null },
+    time: { value: 0 },
+  },
+  vertexShader: `
+    uniform mat4 textureMatrix;
+    varying vec4 vUv;
+    varying vec3 vWorld;
+    void main() {
+      vUv = textureMatrix * vec4(position, 1.0);
+      vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec3 water;
+    uniform float time;
+    varying vec4 vUv;
+    varying vec3 vWorld;
+    void main() {
+      // Long, slow swells rather than fine chop, and three taps down the
+      // surface so the mirror softens as real water does.
+      float wave = sin(vWorld.z * 1.4 + time * 1.1) * 0.5 + sin(vWorld.x * 0.35 + vWorld.z * 2.2 - time * 0.8) * 0.5;
+      vec4 uv = vUv;
+      uv.x += wave * 0.003 * uv.w;
+      vec4 dy = vec4(0.0, 0.004 * uv.w, 0.0, 0.0);
+      vec3 mirrored = (texture2DProj(tDiffuse, uv).rgb + texture2DProj(tDiffuse, uv + dy).rgb + texture2DProj(tDiffuse, uv - dy).rgb) / 3.0;
+      float near = smoothstep(-8.0, 6.0, vWorld.z);
+      vec3 col = mix(water, mirrored * 0.72, 0.62 - near * 0.25);
+      gl_FragColor = vec4(col, 1.0);
+    }`,
 }
 
 function insidePolygon(pt, pts) {

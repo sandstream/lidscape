@@ -312,6 +312,7 @@ function lowerQuality() {
   resize()
   moonLight.castShadow = false
   bloom.enabled = false
+  city.setReflections(false)
   refreshHud()
 }
 if (quality === 'low') lowerQuality()
