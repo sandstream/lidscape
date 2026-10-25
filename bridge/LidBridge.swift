@@ -65,11 +65,16 @@ wsOptions.autoReplyPing = true
 // the user visits could otherwise follow when the lid opens and closes. Allowed:
 // the app's web view, and pages served from this Mac. Clients without an Origin
 // are local programs, which can read the sensor themselves anyway.
+// Anything a browser sends must match the list: "null" (sandboxed frames, local
+// files) and values that do not parse are refused.
 func originAllowed(_ origin: String?) -> Bool {
-    guard let origin, let url = URL(string: origin), let scheme = url.scheme else { return true }
-    if scheme == "tauri" { return url.host == "localhost" }
+    guard let origin else { return true }
+    guard origin != "null", let url = URL(string: origin),
+          let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased()
+    else { return false }
+    if scheme == "tauri" { return host == "localhost" }
     guard scheme == "http" || scheme == "https" else { return false }
-    return ["localhost", "127.0.0.1", "tauri.localhost"].contains(url.host ?? "")
+    return ["localhost", "127.0.0.1", "tauri.localhost"].contains(host)
 }
 
 wsOptions.setClientRequestHandler(.main) { _, headers in
