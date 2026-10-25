@@ -1,15 +1,17 @@
-// Checks every city and theme before it reaches the page:
+// Checks every city, theme and variant before it reaches the page:
 //   node tools/check-cities.mjs
 // It runs in CI on each pull request. It does not render; open the page for that.
 
 import { readdirSync, existsSync } from 'node:fs'
 import { CITIES } from '../src/cities/index.js'
 import { THEMES } from '../src/themes/index.js'
+import { VARIANTS } from '../src/variants/index.js'
 import { TRAITS } from '../src/traits.js'
 
 // Keep in step with BUILDERS in src/city.js.
 const ITEM_TYPES = ['house', 'tower', 'hill', 'arcade', 'lamp', 'outline']
-// Keep in step with EFFECTS in src/effects.js.
+// Keep in step with EFFECTS in src/effects.js and POST_STEPS in src/post.js.
+const POST_STEPS = ['tiltShift', 'grade']
 const EFFECT_TYPES = ['snowfall', 'snowcaps', 'stringLights', 'windowStars']
 const HEX = /^#[0-9a-f]{6}$/i
 const errors = []
@@ -69,28 +71,51 @@ for (const city of CITIES) {
   })
 }
 
-const themeFiles = readdirSync(new URL('../src/themes/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
-const themeIds = THEMES.map((t) => t.id)
-for (const f of themeFiles) {
-  if (!themeIds.includes(f.replace(/\.js$/, ''))) fail(f, 'file is not listed in src/themes/index.js')
-}
-for (const theme of THEMES) {
-  const at = `theme ${theme.id ?? '(no id)'}`
-  if (!/^[a-z0-9-]+$/.test(theme.id ?? '')) fail(at, 'id must be lower case letters, digits and hyphens')
-  if (!theme.name) fail(at, 'name is missing')
-  const settingIds = (theme.settings ?? []).map((s) => s.id)
-  for (const s of theme.settings ?? []) {
-    const sw = `${at} setting ${s.id}`
-    if (!s.label) fail(sw, 'label is missing')
-    if (![s.min, s.max, s.step, s.default].every(finite) || s.min >= s.max || s.default < s.min || s.default > s.max) fail(sw, 'needs min < max, step, and a default inside the range')
-    if (s.requires && !(s.requires in TRAITS)) fail(sw, `requires unknown trait ${s.requires}`)
-    if (['city', 'theme', 'progress', 'lights'].includes(s.id)) fail(sw, 'id clashes with a page URL parameter')
+const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality']
+const settingIds = new Map()
+function checkSettings(at, list) {
+  for (const st of list ?? []) {
+    const sw = `${at} setting ${st.id}`
+    if (!st.label) fail(sw, 'label is missing')
+    if (![st.min, st.max, st.step, st.default].every(finite) || st.min >= st.max || st.default < st.min || st.default > st.max) fail(sw, 'needs min < max, step, and a default inside the range')
+    if (st.requires && !(st.requires in TRAITS)) fail(sw, `requires unknown trait ${st.requires}`)
+    if (RESERVED.includes(st.id)) fail(sw, 'id clashes with a page URL parameter')
+    if (settingIds.has(st.id) && settingIds.get(st.id) !== at) fail(sw, `id is also used by ${settingIds.get(st.id)}; settings share the URL`)
+    settingIds.set(st.id, at)
   }
-  ;(theme.effects ?? []).forEach((fx, i) => {
+}
+function checkFolder(folder, list, label) {
+  const files = readdirSync(new URL(`../src/${folder}/`, import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
+  const listed = list.map((x) => x.id)
+  for (const f of files) if (!listed.includes(f.replace(/\.js$/, ''))) fail(`${folder}/${f}`, `file is not listed in src/${folder}/index.js`)
+  for (const x of list) {
+    if (!/^[a-z0-9-]+$/.test(x.id ?? '')) fail(`${label} ${x.id}`, 'id must be lower case letters, digits and hyphens')
+    if (!x.name) fail(`${label} ${x.id}`, 'name is missing')
+  }
+  return listed
+}
+
+// Themes: the artistic form of the picture.
+const themeIds = checkFolder('themes', THEMES, 'theme')
+for (const theme of THEMES) {
+  const at = `theme ${theme.id}`
+  for (const step of Object.keys(theme.post ?? {})) if (!POST_STEPS.includes(step)) fail(at, `post step ${step} is unknown; use ${POST_STEPS.join(', ')}`)
+  checkSettings(at, theme.settings)
+  const ts = theme.post?.tiltShift
+  if (ts && !(theme.settings ?? []).some((st) => st.id === ts.setting)) fail(at, `tiltShift.setting ${ts.setting} is not in the theme's settings`)
+}
+
+// Variants: an occasion over any theme, limited by the city's traits.
+const variantIds = checkFolder('variants', VARIANTS, 'variant')
+for (const variant of VARIANTS) {
+  const at = `variant ${variant.id}`
+  checkSettings(at, variant.settings)
+  const ids = (variant.settings ?? []).map((st) => st.id)
+  ;(variant.effects ?? []).forEach((fx, i) => {
     const fw = `${at} effect ${i} (${fx.type})`
     if (!EFFECT_TYPES.includes(fx.type)) fail(fw, `type must be one of ${EFFECT_TYPES.join(', ')}`)
     if (fx.requires && !(fx.requires in TRAITS)) fail(fw, `requires unknown trait ${fx.requires}`)
-    if (fx.setting && !settingIds.includes(fx.setting)) fail(fw, `setting ${fx.setting} is not in the theme's settings`)
+    if (fx.setting && !ids.includes(fx.setting)) fail(fw, `setting ${fx.setting} is not in the variant's settings`)
   })
 }
 
@@ -98,4 +123,4 @@ if (errors.length) {
   console.error(errors.map((e) => `FAIL ${e}`).join('\n'))
   process.exit(1)
 }
-console.log(`OK: ${CITIES.length} ${CITIES.length === 1 ? 'city' : 'cities'} (${ids.join(', ')}), ${THEMES.length} ${THEMES.length === 1 ? 'theme' : 'themes'} (${themeIds.join(', ')})`)
+console.log(`OK: cities (${ids.join(', ')}), themes (${themeIds.join(', ')}), variants (${variantIds.join(', ')})`)

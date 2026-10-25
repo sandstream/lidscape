@@ -7,6 +7,7 @@ Creative Commons Attribution 4.0 International License (CC BY 4.0):
 
 - src/cities/ (city definitions and their drawn landmarks)
 - src/themes/ (themes)
+- src/variants/ (variants)
 - docs/cities/ (research files)
 - docs/*.png (screenshots)
 

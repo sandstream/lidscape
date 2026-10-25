@@ -7,6 +7,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { buildCity } from './city.js'
 import { CITIES, findCity } from './cities/index.js'
 import { THEMES, findTheme } from './themes/index.js'
+import { VARIANTS, findVariant } from './variants/index.js'
+import { buildPost } from './post.js'
 import { allows } from './traits.js'
 import { setOffAxis } from './offaxis.js'
 import { connectLid } from './lid.js'
@@ -52,14 +54,18 @@ moonLight.shadow.bias = -0.0005
 moonLight.shadow.radius = 4
 scene.add(moonLight)
 
+// A theme is the artistic form of the whole picture; a variant is an occasion
+// laid over it. Both come from the URL, with their settings, so a link or the
+// app can set them.
 const theme = findTheme(params.get('theme'))
-// Theme settings come from the URL, so a link or the app can set them.
-const themeSettings = {}
-for (const s of theme?.settings ?? []) {
+const variant = findVariant(params.get('variant'))
+const allSettings = [...theme.settings, ...(variant?.settings ?? [])]
+const settings = {}
+for (const s of allSettings) {
   const v = Number(params.get(s.id))
-  themeSettings[s.id] = params.has(s.id) && Number.isFinite(v) ? Math.min(s.max, Math.max(s.min, v)) : s.default
+  settings[s.id] = params.has(s.id) && Number.isFinite(v) ? Math.min(s.max, Math.max(s.min, v)) : s.default
 }
-const city = buildCity(cityDef, scene, -SCREEN_H / 2, { theme, settings: themeSettings })
+const city = buildCity(cityDef, scene, -SCREEN_H / 2, { variant, settings })
 
 // For the console and for tests: window.lidscape.scene and friends.
 window.lidscape = { scene, camera, renderer }
@@ -68,12 +74,15 @@ const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
 const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.5, 0.95)
 composer.addPass(bloom)
-composer.addPass(new OutputPass())
+const output = new OutputPass()
+composer.addPass(output)
+const post = buildPost(composer, theme, output)
 
 let screenW = 30
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false)
   composer.setSize(innerWidth, innerHeight)
+  post.resize(innerWidth, innerHeight)
   screenW = SCREEN_H * (innerWidth / innerHeight)
 }
 addEventListener('resize', resize)
@@ -102,24 +111,32 @@ cityPicker.addEventListener('change', () => {
 
 const themePicker = document.getElementById('theme')
 themePicker.setAttribute('aria-label', t.theme)
-themePicker.add(new Option(t.themeNone, '', false, !theme))
-for (const th of THEMES) themePicker.add(new Option(th.name, th.id, false, th.id === theme?.id))
+for (const th of THEMES) themePicker.add(new Option(th.name, th.id, false, th.id === theme.id))
 themePicker.addEventListener('change', () => {
-  if (themePicker.value) params.set('theme', themePicker.value)
-  else params.delete('theme')
+  params.set('theme', themePicker.value)
+  location.search = params.toString()
+})
+
+const variantPicker = document.getElementById('variant')
+variantPicker.setAttribute('aria-label', t.variant)
+variantPicker.add(new Option(t.variantNone, '', false, !variant))
+for (const v of VARIANTS) variantPicker.add(new Option(v.name, v.id, false, v.id === variant?.id))
+variantPicker.addEventListener('change', () => {
+  if (variantPicker.value) params.set('variant', variantPicker.value)
+  else params.delete('variant')
   location.search = params.toString()
 })
 
 // A setting shows only when the city allows what it controls: no snow slider in Nairobi.
 const settingsBox = document.getElementById('theme-settings')
-for (const s of theme?.settings ?? []) {
+for (const s of allSettings) {
   if (!allows(cityDef, s.requires)) continue
   const label = document.createElement('label')
   label.textContent = s.label
   const range = Object.assign(document.createElement('input'), { type: 'range', min: s.min, max: s.max, step: s.step })
-  range.value = themeSettings[s.id]
+  range.value = settings[s.id]
   range.addEventListener('input', () => {
-    themeSettings[s.id] = Number(range.value)
+    settings[s.id] = Number(range.value)
     params.set(s.id, range.value)
     history.replaceState(null, '', `?${params}`)
   })
@@ -364,6 +381,7 @@ function frame() {
 
   setOffAxis(camera, eye, screenW, SCREEN_H)
   city.update(progress, lights, time)
+  post.update(settings)
   updateLabel()
   composer.render()
 

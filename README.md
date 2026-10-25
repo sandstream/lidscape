@@ -48,7 +48,8 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 | Parameter | Effect |
 |---|---|
 | `?city=stockholm` | Which city to show (see `src/cities/index.js`) |
-| `?theme=christmas` | A theme; its settings follow, e.g. `&snow=0.3` |
+| `?theme=miniature` | The artistic form: `paper` (default) or `miniature`, with settings such as `&focus=0.4` |
+| `?variant=christmas` | An occasion over the theme, with settings such as `&snow=0.3` |
 | `?progress=0.6` | Start value for the fold (0 to 1) |
 | `?lights=off` | Start with the lights off |
 | `?quality=low` | Skip the speed check and draw at lower quality (or `high`) |
@@ -60,23 +61,24 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 | `src/cities/stockholm.js` | City definition: layers, landmark outlines, tram |
 | `src/cities/index.js` | The list of cities |
 | `docs/cities/` | Research per city: viewpoint, landmarks, sources |
-| `src/themes/`, `src/effects.js` | Themes and the effects they use |
-| `src/traits.js` | What a city has (snow, advent stars); themes respect it |
-| `tools/check-cities.mjs` | Checks every city and theme; runs on each pull request |
+| `src/themes/`, `src/post.js` | Themes: the artistic form, as post treatment |
+| `src/variants/`, `src/effects.js` | Variants: occasions such as Christmas, and their effects |
+| `src/traits.js` | What a city has (snow, advent stars); variants respect it |
+| `tools/check-cities.mjs` | Checks every city, theme and variant; runs on each pull request |
 | `src/city.js` | Builds paper cards from the definition and animates fold, lights, tram |
 | `src/offaxis.js` | Head-coupled off-axis projection; the screen is a 30 × 19.5 cm window |
 | `src/tracking.js` | MediaPipe face (iris distance gives depth) and hand pose |
 | `src/lid.js` | WebSocket client for the lid bridge |
 | `bridge/LidBridge.swift` | Reads the lid sensor over IOKit HID and serves it on localhost |
 
-## Add a city or a theme
+## Add a city, a theme or a variant
 
-New cities and themes come in as pull requests. Read [CONTRIBUTING.md](CONTRIBUTING.md). With Claude Code or Codex, open the repo and say "Build Göteborg"; [AGENTS.md](AGENTS.md) tells the agent what to do.
+New cities, themes and variants come in as pull requests. Read [CONTRIBUTING.md](CONTRIBUTING.md). With Claude Code or Codex, open the repo and say "Build Göteborg"; [AGENTS.md](AGENTS.md) tells the agent what to do.
 
 ## License
 
 - Code: [MIT](LICENSE).
-- Cities, themes, research and screenshots: [CC BY 4.0](LICENSE-CONTENT). Credit
+- Cities, themes, variants, research and screenshots: [CC BY 4.0](LICENSE-CONTENT). Credit
   "Lidscape by Sandstream AB and contributors".
 - Font: Instrument Serif, SIL Open Font License 1.1 (`assets/fonts/LICENSE.txt`).
 - The name Lidscape and the app icon are not covered by these licenses.

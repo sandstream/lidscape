@@ -1,5 +1,5 @@
-// Christmas: string lights on the quay everywhere, snow and advent stars only
-// where the city has them (see src/traits.js).
+// Christmas, a variant: string lights on the quay everywhere, snow and advent
+// stars only where the city has them (see src/traits.js). Works on any theme.
 
 export const christmas = {
   id: 'christmas',
