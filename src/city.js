@@ -3,7 +3,10 @@
 // every card flat; progress 1 stands them all up.
 
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { rng } from './random.js'
+import { buildEffects } from './effects.js'
+import { paintFacades } from './facades.js'
 
 const CARD_DEPTH = 0.22
 const SPAN = 0.62 // share of progress each card needs to stand up
@@ -89,18 +92,125 @@ function roofPoints(shape, x0, x1, h, roof, roofH) {
   }
 }
 
+// Roofs drawn as their own piece of paper, in the roof's colour: copper, slate, tile.
+const OWN_ROOFS = ['hip', 'mansard', 'bell']
+
+function rect(x0, y0, x1, y1) {
+  const s = new THREE.Shape()
+  s.moveTo(x0, y0)
+  s.lineTo(x1, y0)
+  s.lineTo(x1, y1)
+  s.lineTo(x0, y1)
+  return s
+}
+
+function lighten(hex, amount) {
+  return '#' + new THREE.Color(hex).lerp(new THREE.Color('#ffffff'), amount).getHexString()
+}
+
+// A roof piece standing on the facade at height h, overhanging it a little.
+function roofPiece(x0, x1, h, roof, roofH) {
+  const w = x1 - x0
+  const ov = Math.min(0.12, w * 0.03)
+  const s = new THREE.Shape()
+  s.moveTo(x0 - ov, h)
+  s.lineTo(x1 + ov, h)
+  if (roof === 'hip') {
+    s.lineTo(x1 - w * 0.18, h + roofH)
+    s.lineTo(x0 + w * 0.18, h + roofH)
+  } else if (roof === 'mansard') {
+    s.lineTo(x1 - w * 0.05, h + roofH * 0.68)
+    s.lineTo(x1 - w * 0.2, h + roofH)
+    s.lineTo(x0 + w * 0.2, h + roofH)
+    s.lineTo(x0 + w * 0.05, h + roofH * 0.68)
+  } else {
+    // bell: the swept Swedish roof, concave below and convex above
+    s.quadraticCurveTo(x1 - w * 0.02, h + roofH * 0.25, x1 - w * 0.08, h + roofH * 0.62)
+    s.quadraticCurveTo(x1 - w * 0.12, h + roofH * 0.95, x1 - w * 0.24, h + roofH)
+    s.lineTo(x0 + w * 0.24, h + roofH)
+    s.quadraticCurveTo(x0 + w * 0.12, h + roofH * 0.95, x0 + w * 0.08, h + roofH * 0.62)
+    s.quadraticCurveTo(x0 + w * 0.02, h + roofH * 0.25, x0 - ov, h)
+  }
+  s.closePath()
+  return s
+}
+
+// A building. Gabled houses are one piece; palaces get a roof in its own colour,
+// a cornice that stands proud of the facade, dormers and chimneys. Windows sit
+// in floors with a taller ground floor, never in a random grid.
 function house(item, r) {
-  const { x, w, h, roof = 'flat', roofH = 1.5 } = item
+  const { x, w, h, roof = 'flat', roofH = 1.5, tint, roofTint = '#5b6470' } = item
   const x0 = x - w / 2
   const x1 = x + w / 2
-  const shape = new THREE.Shape()
-  shape.moveTo(x0, 0)
-  shape.lineTo(x1, 0)
-  roofPoints(shape, x0, x1, h, roof, roofH)
-  shape.lineTo(x0, 0)
+  const parts = []
   const windows = []
-  windowGrid(windows, x, w, 0.9, h - 0.4, r)
-  return { shape, windows }
+
+  const palace = OWN_ROOFS.includes(roof)
+  if (palace) {
+    parts.push({ shape: rect(x0, 0, x1, h), facade: true })
+    parts.push({ shape: roofPiece(x0, x1, h, roof, roofH), tint: roofTint })
+    if (item.cornice !== false) {
+      const ov = Math.min(0.12, w * 0.03)
+      parts.push({ shape: rect(x0 - ov, h - 0.16, x1 + ov, h + 0.04), tint: tint && lighten(tint, 0.35), dz: 0.03 })
+    }
+    const dormers = item.dormers ?? 0
+    for (let i = 0; i < dormers; i++) {
+      const dx = x0 + (w * (i + 0.5)) / dormers
+      const y0 = h + roofH * 0.12
+      const dw = Math.min(0.5, (w / dormers) * 0.45)
+      const d = new THREE.Shape()
+      d.moveTo(dx - dw / 2, y0)
+      d.lineTo(dx + dw / 2, y0)
+      d.lineTo(dx + dw / 2, y0 + 0.42)
+      d.quadraticCurveTo(dx + dw / 2, y0 + 0.62, dx, y0 + 0.64)
+      d.quadraticCurveTo(dx - dw / 2, y0 + 0.62, dx - dw / 2, y0 + 0.42)
+      parts.push({ shape: d, tint: tint && lighten(tint, 0.2), dz: 0.03 })
+      windows.push({ x: dx, y: y0 + 0.26, w: dw * 0.45, h: 0.3, dz: 0.03 })
+    }
+    for (const cx of item.chimneys ?? []) {
+      const at = x0 + w * cx
+      parts.push({ shape: rect(at - 0.13, h + roofH * 0.4, at + 0.13, h + roofH + 0.55), tint: roofTint, dz: -0.04 })
+    }
+  } else {
+    const shape = new THREE.Shape()
+    shape.moveTo(x0, 0)
+    shape.lineTo(x1, 0)
+    roofPoints(shape, x0, x1, h, roof, roofH)
+    shape.lineTo(x0, 0)
+    parts.push({ shape, facade: true })
+  }
+
+  // Floors: a tall ground floor, then even storeys under the cornice.
+  const floors = item.floors ?? Math.max(1, Math.round((h - 0.4) / 1.35))
+  const ground = Math.min(1.7, h * 0.24)
+  const storey = (h - ground - 0.35) / Math.max(1, floors - 1)
+  const cols = Math.max(1, Math.floor((w - 0.45) / (item.bay ?? 0.72)))
+  const pitch = (w - 0.45) / cols
+  // Palaces with three bays or more get a portal in the middle bay.
+  const doorCol = palace && cols >= 3 ? Math.floor(cols / 2) : -1
+  const facadeWindows = []
+  for (let c = 0; c < cols; c++) {
+    const wx = x0 + 0.225 + pitch * (c + 0.5)
+    if (c !== doorCol) facadeWindows.push({ x: wx, y: ground * 0.46, w: pitch * 0.46, h: ground * 0.5, floor: 0 })
+    for (let f = 1; f < floors; f++) {
+      if (r() < (item.skip ?? 0.04)) continue
+      facadeWindows.push({ x: wx, y: ground + storey * (f - 0.5), w: pitch * 0.4, h: storey * 0.52, floor: f })
+    }
+  }
+  windows.push(...facadeWindows)
+  const facade = {
+    x0,
+    x1,
+    y0: 0,
+    y1: palace ? h : h + roofH,
+    facadeTop: h,
+    tint: tint ?? '#d8c9ad',
+    kind: palace ? 'palace' : 'plain',
+    ground,
+    windows: facadeWindows,
+    door: doorCol >= 0 ? { x: x0 + 0.225 + pitch * (doorCol + 0.5), w: pitch * 0.42, h: ground * 0.72 } : null,
+  }
+  return { parts, windows, facades: [facade] }
 }
 
 function tower(item, r) {
@@ -185,8 +295,9 @@ function arcade(item) {
   shape.lineTo(x1, h)
   shape.lineTo(x0, h)
   shape.lineTo(x0, 0)
+  // archW 0 is a plain quay wall
   const pitch = archW * 1.45
-  for (let x = x0 + pitch / 2; x < x1 - pitch / 2; x += pitch) {
+  for (let x = x0 + pitch / 2; archW > 0 && x < x1 - pitch / 2; x += pitch) {
     const hole = new THREE.Path()
     const ah = h * 0.62
     hole.moveTo(x - archW / 2, 0.01)
@@ -199,19 +310,22 @@ function arcade(item) {
   return { shape, windows: [] }
 }
 
+// A street lamp: post and lantern. `y` lifts it onto a quay; `scale` sizes the
+// post and lantern together, so a lamp can stay in proportion to the houses.
 function lamp(item) {
-  const { x, h } = item
+  const { x, h, y = 0, scale = 1 } = item
+  const s = scale
   const shape = new THREE.Shape()
-  shape.moveTo(x - 0.12, 0)
-  shape.lineTo(x + 0.12, 0)
-  shape.lineTo(x + 0.08, h)
-  shape.lineTo(x + 0.4, h)
-  shape.lineTo(x + 0.25, h + 0.7)
-  shape.lineTo(x - 0.25, h + 0.7)
-  shape.lineTo(x - 0.4, h)
-  shape.lineTo(x - 0.08, h)
-  shape.lineTo(x - 0.12, 0)
-  return { shape, windows: [{ x, y: h + 0.3, w: 0.42, h: 0.42 }] }
+  shape.moveTo(x - 0.12 * s, y)
+  shape.lineTo(x + 0.12 * s, y)
+  shape.lineTo(x + 0.08 * s, y + h)
+  shape.lineTo(x + 0.4 * s, y + h)
+  shape.lineTo(x + 0.25 * s, y + h + 0.7 * s)
+  shape.lineTo(x - 0.25 * s, y + h + 0.7 * s)
+  shape.lineTo(x - 0.4 * s, y + h)
+  shape.lineTo(x - 0.08 * s, y + h)
+  shape.lineTo(x - 0.12 * s, y)
+  return { shape, windows: [{ x, y: y + h + 0.3 * s, w: 0.42 * s, h: 0.42 * s }] }
 }
 
 function tram(v) {
@@ -245,7 +359,69 @@ function tram(v) {
   return { shape: [shape, panto], windows }
 }
 
-const BUILDERS = { house, tower, hill, arcade, lamp }
+// A hand-drawn landmark: points (and optional holes) relative to x, windows
+// placed one by one or as grids.
+function outline(item, r) {
+  const { x = 0, points, holes = [], windows = [], grids = [] } = item
+  const at = (list) => list.map(([px, py]) => new THREE.Vector2(x + px, py))
+  const shape = new THREE.Shape(at(points))
+  shape.holes = holes.map((hole) => new THREE.Path(at(hole)))
+  const out = windows.map((w) => ({ ...w, x: x + w.x }))
+  for (const g of grids) windowGrid(out, x + g.x, g.w, g.y0, g.y1, r, g.opts)
+  if (!item.facade) return { shape, windows: out }
+  // A printed facade over the outline's bounding box; floors from the window rows.
+  const xs = points.map((p) => x + p[0])
+  const ys = points.map((p) => p[1])
+  const rows = [...new Set(out.map((w) => w.y.toFixed(2)))].sort((a, b) => a - b)
+  const top = item.facade.top ?? Math.max(...ys)
+  return {
+    parts: [{ shape, facade: true }],
+    windows: out,
+    facades: [
+      {
+        x0: Math.min(...xs),
+        x1: Math.max(...xs),
+        y0: 0,
+        y1: Math.max(...ys),
+        facadeTop: top,
+        tint: item.tint,
+        kind: item.facade.kind ?? 'palace',
+        globe: item.facade.globe && { ...item.facade.globe, cx: x },
+        ground: item.facade.ground ?? 1.6,
+        windows: out.map((w) => ({ ...w, floor: rows.indexOf(w.y.toFixed(2)) })),
+        door: item.facade.door ?? null,
+      },
+    ],
+  }
+}
+
+const FACADE = 'facade'
+
+// An extruded card holds its faces (group 0) and its cut edges (group 1). Split
+// them so the edges can show the paper's core and the faces the print.
+function splitCapsSides(geo) {
+  const out = { caps: [], sides: [] }
+  for (const g of geo.groups) out[g.materialIndex === 0 ? 'caps' : 'sides'].push(g)
+  const take = (groups) => {
+    const part = new THREE.BufferGeometry()
+    for (const name of ['position', 'normal', 'uv']) {
+      const a = geo.attributes[name]
+      const size = a.itemSize
+      const count = groups.reduce((n, g) => n + g.count, 0)
+      const arr = new Float32Array(count * size)
+      let o = 0
+      for (const g of groups) {
+        arr.set(a.array.subarray(g.start * size, (g.start + g.count) * size), o)
+        o += g.count * size
+      }
+      part.setAttribute(name, new THREE.BufferAttribute(arr, size))
+    }
+    return part
+  }
+  return { caps: take(out.caps), sides: take(out.sides) }
+}
+
+const BUILDERS = { house, tower, hill, arcade, lamp, outline }
 
 // Drop repeated and collinear points. Either one yields zero-area triangles,
 // whose zero normals turn into NaN in lighting and black out the bloom pass.
@@ -258,8 +434,10 @@ function cleanPoints(points) {
     out = out.filter((p, i, arr) => {
       const a = arr[(i - 1 + arr.length) % arr.length]
       const b = arr[(i + 1) % arr.length]
+      // Compare the sine of the turn, not the raw cross product: rounding on
+      // longer edges leaves a cross product above any fixed tolerance.
       const cross = (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)
-      if (Math.abs(cross) > 1e-6) return true
+      if (Math.abs(cross) > 1e-5 * p.distanceTo(a) * b.distanceTo(p)) return true
       changed = true
       return false
     })
@@ -273,31 +451,63 @@ function clean(shape) {
   return result
 }
 
-function extrude(shapes) {
+function extrude(shapes, label = 'shape') {
   const list = (Array.isArray(shapes) ? shapes : [shapes]).map(clean)
-  return new THREE.ExtrudeGeometry(list, { depth: CARD_DEPTH, bevelEnabled: false })
+  const geo = new THREE.ExtrudeGeometry(list, { depth: CARD_DEPTH, bevelEnabled: false })
+  repairNormals(geo, label)
+  return geo
+}
+
+// A zero normal turns into NaN in lighting and flashes the bloom pass black.
+// Triangulation makes them from corners that lie on one line without being
+// neighbours, as the inner corners of a stepped gable do. Such a triangle has no
+// area, so it is safe to point its normal out of the card face it lies in.
+// Anything else is a broken shape: say which, so it is found in the console.
+function repairNormals(geo, label) {
+  const n = geo.attributes.normal.array
+  const p = geo.attributes.position.array
+  for (let i = 0; i < n.length; i += 3) {
+    if (Math.hypot(n[i], n[i + 1], n[i + 2]) >= 0.5) continue
+    const z = p[i + 2]
+    if (Math.abs(z) < 1e-4 || Math.abs(z - CARD_DEPTH) < 1e-4) {
+      n[i] = 0
+      n[i + 1] = 0
+      n[i + 2] = z > CARD_DEPTH / 2 ? 1 : -1
+    } else {
+      console.error(`Lidscape: ${label} has a zero normal on its side wall and will flicker black`)
+      return
+    }
+  }
+  geo.attributes.normal.needsUpdate = true
 }
 
 // --- Scene -------------------------------------------------------------------
 
-function windowMesh(windows, z, r) {
+// litShare is the part of the windows that are lit with the lights fully on.
+function windowMesh(windows, z, r, dark = WINDOW_DARK, litShare = 1) {
   const geo = new THREE.PlaneGeometry(1, 1)
   const mat = new THREE.MeshBasicMaterial({ toneMapped: false })
   const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, windows.length))
   mesh.count = windows.length
   const m = new THREE.Matrix4()
   windows.forEach((win, i) => {
-    m.makeScale(win.w, win.h, 1).setPosition(win.x, win.y, z)
+    m.makeScale(win.w, win.h, 1).setPosition(win.x, win.y, z + (win.dz ?? 0))
     mesh.setMatrixAt(i, m)
-    mesh.setColorAt(i, WINDOW_DARK)
+    mesh.setColorAt(i, dark)
   })
-  const thresholds = windows.map(() => 0.05 + r() * 0.9)
+  const thresholds = windows.map(() => 0.05 + (r() * 0.9) / litShare)
   const flicker = windows.map(() => r() * Math.PI * 2)
   return { mesh, thresholds, flicker }
 }
 
-export function buildCity(def, scene, floorY) {
+export function buildCity(def, scene, floorY, { theme = null, settings = {} } = {}) {
   const r = rng(def.id.length * 131)
+  // The card's cut edge shows the paper's light core.
+  const edge = new THREE.MeshStandardMaterial({ color: def.paperCore ?? '#f3ebdc', roughness: 1, metalness: 0 })
+  const windowDark = new THREE.Color(def.windows?.dark ?? WINDOW_DARK)
+  const litShare = def.windows?.litShare ?? 1
+  // Where the sky turns from horizon colour to top colour, in the sky plane's height.
+  const blend = def.sky.blend ?? [0.42, 0.85]
   const tex = paperTexture()
   const materials = new Map()
   const paper = (tint) => {
@@ -317,7 +527,7 @@ export function buildCity(def, scene, floorY) {
     new THREE.ShaderMaterial({
       uniforms: { top: { value: new THREE.Color(def.sky.top) }, horizon: { value: new THREE.Color(def.sky.horizon) } },
       vertexShader: 'varying float vY; void main(){ vY = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying float vY; void main(){ gl_FragColor = vec4(mix(horizon, top, smoothstep(0.42, 0.85, vY)), 1.0); }',
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; varying float vY; void main(){ gl_FragColor = vec4(mix(horizon, top, smoothstep(${blend[0].toFixed(3)}, ${blend[1].toFixed(3)}, vY)), 1.0); }`,
       depthWrite: false,
     })
   )
@@ -336,7 +546,7 @@ export function buildCity(def, scene, floorY) {
     new THREE.CircleGeometry(2.6, 48),
     new THREE.MeshBasicMaterial({ color: '#fff3dd', transparent: true, opacity: 0, toneMapped: false })
   )
-  moon.position.set(-38, 44, -108)
+  moon.position.set(...(def.moon ?? [-38, 44]), -108)
   root.add(moon)
 
   // Page (floor) and water
@@ -365,12 +575,16 @@ export function buildCity(def, scene, floorY) {
     depthWrite: false,
     toneMapped: false,
   })
-  for (let i = 0; i < 26; i++) {
-    const len = 1.2 + r() * 3.5
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.35 + r() * 0.5, len), streakMat)
+  // Light on the water: thin broken streaks that shimmer, as lit windows make on
+  // a dark harbour.
+  const streaks = []
+  for (let i = 0; i < 90; i++) {
+    const len = 0.4 + r() * 1.8
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.05 + r() * 0.1, len), streakMat)
     s.rotation.x = -Math.PI / 2
     s.position.set((r() - 0.5) * 70, 0.02, def.water.zFrom + 0.6 + r() * (waterDepth - 2))
     root.add(s)
+    streaks.push({ mesh: s, phase: r() * Math.PI * 2, speed: 1.5 + r() * 2 })
   }
 
   // Cards
@@ -380,17 +594,50 @@ export function buildCity(def, scene, floorY) {
     root.add(pivot)
 
     const windows = []
+    const shapes = []
+    const pieces = new Map()
+    const regions = []
+    const edges = []
+    const hits = []
     for (const item of layerDef.items) {
-      const { shape, windows: w } = BUILDERS[item.type](item, r)
-      const geo = extrude(shape)
+      const built = BUILDERS[item.type](item, r)
+      const parts = built.parts ?? [{ shape: built.shape }]
       const tint = item.tint || layerDef.tint || def.palette[Math.floor(r() * def.palette.length)]
-      const mesh = new THREE.Mesh(geo, paper(tint))
+      const label = `${def.id} z=${layerDef.z} ${item.type} at x=${item.x ?? item.x0}`
+      for (const part of parts) {
+        const list = Array.isArray(part.shape) ? part.shape : [part.shape]
+        if (!part.dz || part.dz <= 0) {
+          shapes.push(...list)
+          for (const sh of list) hits.push({ pts: sh.getPoints(8), label: item.label ?? null })
+        }
+        const geo = extrude(list, label)
+        if (part.dz) geo.translate(0, 0, part.dz)
+        const key = part.facade && built.facades ? FACADE : part.tint || tint
+        const { caps, sides } = splitCapsSides(geo)
+        if (!pieces.has(key)) pieces.set(key, [])
+        pieces.get(key).push(caps)
+        edges.push(sides)
+      }
+      if (built.facades) regions.push(...built.facades.map((f) => ({ ...f, tint: f.tint ?? tint })))
+      windows.push(...built.windows)
+    }
+    // One mesh per colour per card keeps draw calls low however much detail there
+    // is: the facades share one printed atlas, the card edges one paper core.
+    const atlas = regions.length
+      ? new THREE.MeshStandardMaterial({ map: paintFacades(regions, r), roughness: 0.95, metalness: 0 })
+      : null
+    for (const [key, geos] of pieces) {
+      const mesh = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos) : geos[0], key === FACADE ? atlas : paper(key))
       mesh.castShadow = true
       mesh.receiveShadow = true
       pivot.add(mesh)
-      windows.push(...w)
     }
-    const win = windowMesh(windows, CARD_DEPTH + 0.015, r)
+    if (edges.length) {
+      const mesh = new THREE.Mesh(mergeGeometries(edges), edge)
+      mesh.castShadow = true
+      pivot.add(mesh)
+    }
+    const win = windowMesh(windows, CARD_DEPTH + 0.015, r, windowDark, litShare)
     pivot.add(win.mesh)
 
     let vehicle = null
@@ -399,13 +646,13 @@ export function buildCity(def, scene, floorY) {
       const { shape, windows: vw } = tram(v)
       const group = new THREE.Group()
       const body = new THREE.Mesh(
-        extrude(shape),
-        paper('#efe7f6')
+        extrude(shape, `${def.id} vehicle`),
+        paper(v.tint ?? '#efe7f6')
       )
       body.castShadow = true
       group.add(body)
       for (const wx of [-v.w / 2 + 1.3, v.w / 2 - 1.3]) {
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, CARD_DEPTH, 20), paper('#b9b0df'))
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, CARD_DEPTH, 20), paper(v.wheelTint ?? '#b9b0df'))
         wheel.rotation.x = Math.PI / 2
         wheel.position.set(wx, 0.38, CARD_DEPTH / 2 + 0.05)
         group.add(wheel)
@@ -419,19 +666,29 @@ export function buildCity(def, scene, floorY) {
       vehicle = { def: v, group, win: vwin }
     }
 
-    return { pivot, delay: index * LAYER_STAGGER, win, vehicle }
+    return { def: layerDef, pivot, shapes, hits, windows, delay: index * LAYER_STAGGER, win, vehicle }
   })
 
   const glow = new THREE.PointLight('#ffb067', 0, 60, 1.5)
   glow.position.set(0, 7, -6)
   root.add(glow)
 
+  const updateEffects = buildEffects(theme, def, {
+    root,
+    layers,
+    floor,
+    paper,
+    cardDepth: CARD_DEPTH,
+    random: rng(def.id.length * 977),
+    setting: (id, fallback) => settings[id] ?? fallback,
+  })
+
   const tmp = new THREE.Color()
   function paintWindows(win, level, time) {
     for (let i = 0; i < win.thresholds.length; i++) {
       const th = win.thresholds[i]
       const lit = smooth(th, th + 0.08, level) * (0.92 + 0.08 * Math.sin(time * 2.3 + win.flicker[i]))
-      tmp.copy(WINDOW_DARK).lerp(WINDOW_LIT, lit)
+      tmp.copy(windowDark).lerp(WINDOW_LIT, lit)
       win.mesh.setColorAt(i, tmp)
     }
     if (win.mesh.instanceColor) win.mesh.instanceColor.needsUpdate = true
@@ -460,7 +717,38 @@ export function buildCity(def, scene, floorY) {
     moon.material.opacity = night
     streakMat.opacity = lightLevel * 0.35
     glow.intensity = lightLevel * 6
+    for (const st of streaks) st.mesh.scale.x = 0.5 + 0.5 * Math.sin(time * st.speed + st.phase) ** 2
+    updateEffects({ progress, lights, lightLevel, time })
   }
 
-  return { update }
+  // What the ray hits first, card by card from the front: a landmark's label, or
+  // null when an ordinary building is in the way.
+  const front = [...layers].sort((a, b) => b.def.z - a.def.z)
+  const inv = new THREE.Matrix4()
+  const ray = new THREE.Ray()
+  function pick(worldRay) {
+    for (const layer of front) {
+      inv.copy(layer.pivot.matrixWorld).invert()
+      ray.copy(worldRay).applyMatrix4(inv)
+      if (Math.abs(ray.direction.z) < 1e-6) continue
+      const t = (CARD_DEPTH - ray.origin.z) / ray.direction.z
+      if (t < 0) continue
+      const p = ray.at(t, new THREE.Vector3())
+      if (p.y < 0) continue
+      for (const h of layer.hits) if (insidePolygon(p, h.pts)) return h.label
+    }
+    return null
+  }
+
+  return { update, pick }
+}
+
+function insidePolygon(pt, pts) {
+  let hit = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i]
+    const b = pts[j]
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) hit = !hit
+  }
+  return hit
 }

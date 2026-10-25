@@ -17,9 +17,17 @@
 </head>
 <body>
   <canvas id="scene"></canvas>
+  <!-- In the Mac app the title bar is hidden; this strip moves the window. -->
+  <div id="drag" data-tauri-drag-region></div>
+  <div id="label" role="tooltip" hidden><strong></strong><span></span></div>
 
   <aside id="hud">
     <h1 id="hud-title"></h1>
+    <div id="pickers">
+      <select id="city"></select>
+      <select id="theme"></select>
+    </div>
+    <div id="theme-settings"></div>
     <ul id="hud-status">
       <li data-source="lid"><span class="dot"></span><span class="label"></span></li>
       <li data-source="face"><span class="dot"></span><span class="label"></span></li>

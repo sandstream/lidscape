@@ -1,9 +1,39 @@
+/* Look and feel from Lyssna (Sandstream): its dark tokens, since the scene is a
+   night. Instrument Serif is the only bundled font (the title); everything else
+   uses the system font. Text pairs are at least 4.5:1 against their background. */
+
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("../assets/fonts/instrument-serif.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("../assets/fonts/instrument-serif-italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
-  --ink: #131416;
-  --creme: #f1f1e6;
-  --violet: #663fff;
-  --peach: #f4978e;
-  --glass: rgba(19, 20, 22, 0.62);
+  --bg: #131f1f;
+  --surface: rgb(28 40 40 / 0.78);
+  --surface-solid: #1c2828;
+  --ink: #f4f2ec;
+  --muted: #a6adab;
+  --line: #2c3838;
+  --line-strong: #46524f;
+  --hover: #26332f;
+  --accent: #4fb8b8;
+  --on-accent: #0e1a1a;
+  --wait: #e0a060;
+  --focus: #4fb8b8;
+  --radius: 6px;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --display: "Instrument Serif", Charter, Georgia, serif;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -12,10 +42,14 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #1c1834;
-  color: var(--creme);
-  font: 14px/1.2 "Neue Haas Grotesk Display Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.45 var(--ui);
+  -webkit-font-smoothing: antialiased;
 }
+
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 #scene {
   position: fixed;
@@ -25,6 +59,30 @@ html, body {
   display: block;
 }
 
+#no-webgl { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; padding: 32px; text-align: center; font-size: 16px; }
+
+#label {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+#label[hidden] { display: grid; opacity: 0; }
+#label strong { font: italic 400 19px/1.05 var(--display); }
+#label span { color: var(--muted); font-size: 12px; }
+
+#drag { position: fixed; top: 0; left: 0; right: 0; height: 28px; }
+
 #hud {
   position: fixed;
   left: 16px;
@@ -33,30 +91,43 @@ html, body {
   display: grid;
   gap: 10px;
   padding: 14px 16px;
-  border-radius: 12px;
-  background: var(--glass);
-  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
   text-align: left;
   transition: opacity 0.4s;
 }
 
 #hud.idle { opacity: 0.15; }
-#hud:hover { opacity: 1; }
+#hud:hover, #hud:focus-within { opacity: 1; }
 
 #hud h1 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1;
+  font: 400 24px/1 var(--display);
+  letter-spacing: 0.005em;
 }
 
-#hud h1 em {
-  font-style: normal;
-  background: linear-gradient(90deg, var(--violet), var(--peach));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+#hud h1 em { font-style: italic; color: var(--accent); }
+
+#pickers { display: flex; gap: 8px; flex-wrap: wrap; }
+
+select {
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  cursor: pointer;
 }
+select[hidden] { display: none; }
+
+#theme-settings { display: grid; gap: 6px; }
+#theme-settings[hidden] { display: none; }
+#theme-settings label, #progress-label { display: grid; gap: 4px; color: var(--muted); }
+
+input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+input[type="range"]:disabled { opacity: 0.4; }
 
 #hud-status {
   list-style: none;
@@ -65,6 +136,7 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
+  color: var(--muted);
 }
 
 #hud-status li { display: flex; align-items: center; gap: 6px; }
@@ -73,28 +145,27 @@ html, body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(241, 241, 230, 0.25);
+  border: 1px solid var(--muted);
 }
 
-[data-state="on"] .dot { background: var(--peach); box-shadow: 0 0 8px var(--peach); }
-[data-state="wait"] .dot { background: var(--violet); }
-
-#progress { width: 100%; accent-color: var(--violet); }
-#progress:disabled { opacity: 0.4; }
+[data-state="on"] { color: var(--ink); }
+[data-state="on"] .dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px var(--accent); }
+[data-state="wait"] .dot { background: var(--wait); border-color: var(--wait); }
 
 #hud-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 button {
-  font: inherit;
-  color: var(--creme);
-  background: transparent;
-  border: 1px solid rgba(241, 241, 230, 0.35);
-  border-radius: 999px;
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-solid);
   cursor: pointer;
 }
 
-button:hover { border-color: var(--creme); }
-button:focus-visible, #progress:focus-visible { outline: 2px solid var(--peach); outline-offset: 2px; }
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { opacity: 0.5; cursor: default; }
 
-#hud-hint { margin: 0; opacity: 0.7; font-size: 12px; line-height: 1.3; }
+#hud-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }

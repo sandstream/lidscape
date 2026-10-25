@@ -1,0 +1,103 @@
+# Add a city or a theme
+
+Lidscape grows one city at a time, and every city comes in as a pull request.
+Themes, such as Christmas, come in the same way.
+A good city is one that a local recognizes in two seconds, from the shape of
+its skyline alone.
+
+## 1. Research the skyline
+
+Write `docs/cities/<id>.md` before you draw. Use `docs/cities/stockholm.md` as
+the model. The file names:
+
+- one real viewpoint where the landmarks line up, preferably across water,
+- 4 to 7 landmarks, each with height, year and a silhouette described from
+  bottom to top,
+- the ordinary buildings that fill the rows between them,
+- the city's traits (see below),
+- a source for every height and year.
+
+The id is lower case ASCII with hyphens: `goteborg`, `new-york`.
+
+## 2. Draw the city
+
+Copy `src/cities/stockholm.js` to `src/cities/<id>.js` and list it in
+`src/cities/index.js`.
+
+A city is a set of paper cards. Each layer is one card, `z` centimetres behind
+the screen, ordered from back to front. The screen is about 30 cm wide, and a
+card at `z = -40` shows roughly `x = -26` to `x = 26`.
+
+| Item | Use it for |
+|---|---|
+| `house` | Ordinary buildings. Roofs: `flat`, `gable`, `step`, `hip` |
+| `tower` | Simple towers. Tops: `spire`, `dome`, `cupola`, `crowns` |
+| `outline` | Landmarks. Your own polygon, with holes and windows |
+| `hill` | Ridges and far shores |
+| `arcade` | A quay or bridge with arches |
+| `lamp` | Street lamps |
+
+Draw each landmark as an `outline`. The helpers in `stockholm.js` show the
+method: describe the right half from bottom to top, and `mirrored()` builds the
+full shape. Use `holes` for openwork, such as Riddarholmskyrkan's iron spire.
+
+Set `traits` to state what is true of the real city. Every trait in
+`src/traits.js` must be `true` or `false`, with a source in the research file:
+
+```js
+traits: { snow: true, adventStars: true },   // Stockholm
+traits: { snow: false, adventStars: false }, // Nairobi
+```
+
+Themes read the traits, so Christmas in Nairobi gets string lights but no snow.
+
+Give each landmark a hover label with its name and one line of facts, taken
+from the research file: `{ name: 'Stadshuset', note: '1923 · tornet 106 m' }`.
+The `labelled()` helper in `stockholm.js` puts it on every piece of a landmark.
+
+Three rules keep a skyline readable:
+
+1. Every landmark must stand free against the sky. Put it on a card behind the
+   house rows, and make it tall enough to clear them.
+2. Do not place two landmarks so that one sits straight above the other.
+3. Exaggerate the one feature a local knows, and leave out the rest.
+
+## 3. Check and send
+
+```bash
+python3 tools/serve.py
+open "http://localhost:5173/?city=<id>"
+node tools/check-cities.mjs
+```
+
+Open the pull request with a screenshot of the city fully open and with the
+lights on. The `Cities` check runs the same script on GitHub.
+
+# Add a theme
+
+A theme is a file in `src/themes/`, listed in `src/themes/index.js`. It lists
+effects from `src/effects.js` and the settings people can change:
+
+```js
+export const christmas = {
+  id: 'christmas',
+  name: 'Jul',
+  effects: [
+    { type: 'stringLights', colors: ['#ffd9a0'] },
+    { type: 'snowfall', requires: 'snow', setting: 'snow' },
+  ],
+  settings: [{ id: 'snow', label: 'Snö', min: 0, max: 1, step: 0.01, default: 0.6, requires: 'snow' }],
+}
+```
+
+Rules for themes:
+
+1. Realism comes from the city, not the theme. An effect that needs something
+   the city may not have names it with `requires`. If the trait does not exist
+   yet, add it to `src/traits.js` and set it for every city, with sources.
+2. Effects must work with the parallax. Put weather in the space between the
+   cards, and put decorations on a card's pivot so they fold with it.
+3. A new effect type goes in `src/effects.js` and in `EFFECT_TYPES` in
+   `tools/check-cities.mjs`.
+
+Settings come from the URL as well: `?theme=christmas&snow=0.3`.

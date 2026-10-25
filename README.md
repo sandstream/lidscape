@@ -4,12 +4,30 @@ A pop-up paper city behind your screen. Open the MacBook lid and the city folds 
 
 ![Stockholm](docs/stockholm.png)
 
-First city: Stockholm (Södermalm, Stadshuset, Riddarholmen, Slottet, Gamla stan, Skeppsbron).
+First city: Stockholm at blue hour, seen from Skeppsholmen: Skeppsbron's merchant palaces in front, Kungliga slottet on the water, the spires of Tyska kyrkan, Riddarholmskyrkan and Storkyrkan, Stadshuset behind, and Katarina kyrka and Globen over Söder. Hover a landmark for its name and a line of facts.
 
-## Run
+## Mac app
+
+The app wraps the page in a native window and starts the lid bridge by itself.
+It needs an Apple Silicon Mac with macOS 14.4 or later. The lid works on M2 and
+later; on other Macs the slider and scroll open the book.
 
 ```bash
-python3 -m http.server 5173     # any static server works
+cd app
+bun install
+bun run build          # Lidscape.app, signed ad hoc
+sh scripts/build-dmg.sh   # signed with Developer ID and notarized, when the Mac has the keys
+```
+
+On first start the app checks the Mac: without WebGL 2 it says so, a slow Mac
+gets lower quality, and a Mac without a lid sensor or camera is told plainly.
+The lid sensor cannot be read inside the App Store sandbox without a temporary
+IOKit exception, so the app ships outside the App Store.
+
+## Run in a browser
+
+```bash
+python3 tools/serve.py           # or any static server
 open http://localhost:5173
 ```
 
@@ -29,19 +47,31 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 
 | Parameter | Effect |
 |---|---|
+| `?city=stockholm` | Which city to show (see `src/cities/index.js`) |
+| `?theme=christmas` | A theme; its settings follow, e.g. `&snow=0.3` |
 | `?progress=0.6` | Start value for the fold (0 to 1) |
 | `?lights=off` | Start with the lights off |
+| `?quality=low` | Skip the speed check and draw at lower quality (or `high`) |
 
 ## How it works
 
 | File | Role |
 |---|---|
-| `src/cities/stockholm.js` | City definition: layers, buildings, tram. Add a city by adding a file. |
+| `src/cities/stockholm.js` | City definition: layers, landmark outlines, tram |
+| `src/cities/index.js` | The list of cities |
+| `docs/cities/` | Research per city: viewpoint, landmarks, sources |
+| `src/themes/`, `src/effects.js` | Themes and the effects they use |
+| `src/traits.js` | What a city has (snow, advent stars); themes respect it |
+| `tools/check-cities.mjs` | Checks every city and theme; runs on each pull request |
 | `src/city.js` | Builds paper cards from the definition and animates fold, lights, tram |
 | `src/offaxis.js` | Head-coupled off-axis projection; the screen is a 30 × 19.5 cm window |
 | `src/tracking.js` | MediaPipe face (iris distance gives depth) and hand pose |
 | `src/lid.js` | WebSocket client for the lid bridge |
 | `bridge/LidBridge.swift` | Reads the lid sensor over IOKit HID and serves it on localhost |
+
+## Add a city or a theme
+
+New cities and themes come in as pull requests. Read [CONTRIBUTING.md](CONTRIBUTING.md). With Claude Code or Codex, open the repo and say "Build Göteborg"; [AGENTS.md](AGENTS.md) tells the agent what to do.
 
 ## Credits
 
