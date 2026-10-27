@@ -13,7 +13,7 @@ import { LANGUAGES, BASE } from '../src/lang/index.js'
 const ITEM_TYPES = ['house', 'tower', 'hill', 'arcade', 'lamp', 'outline']
 // Keep in step with EFFECTS in src/effects.js and POST_STEPS in src/post.js.
 const POST_STEPS = ['tiltShift', 'grade']
-const EFFECT_TYPES = ['snowfall', 'snowcaps', 'stringLights', 'windowStars', 'ice']
+const EFFECT_TYPES = ['snowfall', 'snowcaps', 'stringLights', 'windowStars', 'ice', 'trees', 'windowGarlands']
 const HEX = /^#[0-9a-f]{6}$/i
 const errors = []
 const fail = (where, msg) => errors.push(`${where}: ${msg}`)

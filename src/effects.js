@@ -259,7 +259,129 @@ function ice(fx, ctx) {
   }
 }
 
-const EFFECTS = { snowfall, snowcaps, stringLights, windowStars, ice }
+// Christmas trees on the quay: paper trees between the lamps, with twinkling
+// bulbs and a star. Where a quay has no lamps, they stand at an even spacing.
+function trees(fx, ctx) {
+  const H = fx.height ?? 1.3
+  const W = H * 0.62
+  const spots = []
+  for (const layer of ctx.layers) {
+    for (const item of layer.def.items) {
+      if (item.type !== 'arcade') continue
+      const lamps = layer.def.items.filter((it) => it.type === 'lamp' && it.x > item.x0 && it.x < item.x1).map((it) => it.x).sort((a, b) => a - b)
+      const xs = lamps.length > 1 ? lamps.slice(1).map((x, i) => (x + lamps[i]) / 2) : []
+      if (!xs.length) for (let x = item.x0 + 4; x < item.x1 - 4; x += 8) xs.push(x)
+      for (const x of xs) if (ctx.random() < (fx.share ?? 0.6)) spots.push({ layer, x, y: item.h })
+    }
+  }
+  if (!spots.length) return () => {}
+
+  // Three tiers and a trunk, drawn once around x = 0 and moved into place.
+  const shape = new THREE.Shape()
+  const tiers = [[0, 0.42], [0.3, 0.34], [0.58, 0.25]]
+  shape.moveTo(-0.05 * W, 0)
+  shape.lineTo(0.05 * W, 0)
+  shape.lineTo(0.05 * W, 0.12 * H)
+  for (const [y, half] of tiers) {
+    shape.lineTo(half * W * 2 * 0.5 + 0.0, 0.12 * H + y * H)
+    shape.lineTo(0.06 * W, 0.12 * H + (y + 0.24) * H)
+  }
+  shape.lineTo(0, H)
+  for (const [y, half] of [...tiers].reverse()) {
+    shape.lineTo(-0.06 * W, 0.12 * H + (y + 0.24) * H)
+    shape.lineTo(-half * W, 0.12 * H + y * H)
+  }
+  shape.lineTo(-0.05 * W, 0.12 * H)
+  shape.lineTo(-0.05 * W, 0)
+  const treeGeo = new THREE.ExtrudeGeometry(shape, { depth: ctx.cardDepth, bevelEnabled: false })
+  // A little of its own green, so the tree reads as green and not grey at night.
+  const treeMat = new THREE.MeshStandardMaterial({ color: fx.color ?? '#1d6b3a', emissive: fx.color ?? '#1d6b3a', emissiveIntensity: 0.35, roughness: 0.95, metalness: 0 })
+  const starMat = new THREE.MeshBasicMaterial({ color: fx.star ?? '#ffd28a', toneMapped: false, transparent: true, opacity: 0 })
+  const starGeo = new THREE.ShapeGeometry(starShape(0.13 * H))
+  const starBase = new THREE.Color(fx.star ?? '#ffd28a')
+
+  const bulbGeo = new THREE.CircleGeometry(0.035 * H, 8)
+  const bulbs = []
+  const m = new THREE.Matrix4()
+  for (const spot of spots) {
+    const tree = new THREE.Mesh(treeGeo, treeMat)
+    tree.position.set(spot.x, spot.y, 0)
+    const star = new THREE.Mesh(starGeo, starMat)
+    star.position.set(spot.x, spot.y + H, ctx.cardDepth + 0.03)
+    spot.layer.pivot.add(tree, star)
+    // Bulbs in rows across each tier, narrower towards the top.
+    for (const [y, half] of tiers) {
+      for (let row = 0; row < 2; row++) {
+        const by = 0.12 * H + (y + 0.06 + row * 0.1) * H
+        const span = half * W * (1 - row * 0.45 - 0.2)
+        for (let i = -1; i <= 1; i++) bulbs.push({ pivot: spot.layer.pivot, x: spot.x + i * span * 0.8, y: spot.y + by })
+      }
+    }
+  }
+  const groups = new Map()
+  for (const b of bulbs) {
+    if (!groups.has(b.pivot)) groups.set(b.pivot, [])
+    groups.get(b.pivot).push(b)
+  }
+  const meshes = []
+  for (const [pivot, list] of groups) {
+    const mesh = new THREE.InstancedMesh(bulbGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), list.length)
+    list.forEach((b, i) => {
+      mesh.setMatrixAt(i, m.makeTranslation(b.x, b.y, ctx.cardDepth + 0.03))
+      mesh.setColorAt(i, DARK)
+    })
+    pivot.add(mesh)
+    meshes.push({ mesh, list, phase: list.map(() => ctx.random() * Math.PI * 2) })
+  }
+
+  const tmp = new THREE.Color()
+  return ({ lightLevel, time }) => {
+    starMat.opacity = lightLevel
+    starMat.color.copy(starBase).multiplyScalar(1 + 2 * lightLevel)
+    for (const { mesh, list, phase } of meshes) {
+      for (let i = 0; i < list.length; i++) {
+        const twinkle = 0.7 + 0.3 * Math.sin(time * 2.2 + phase[i])
+        tmp.set(fx.colors[i % fx.colors.length]).multiplyScalar(2.2 * lightLevel * twinkle)
+        mesh.setColorAt(i, tmp.lerp(DARK, 1 - lightLevel))
+      }
+      mesh.instanceColor.needsUpdate = true
+    }
+  }
+}
+
+// A green garland hung in a curve across the top of a share of the windows,
+// with a few small bulbs.
+function windowGarlands(fx, ctx) {
+  const mat = new THREE.MeshStandardMaterial({ color: fx.color ?? '#3f7a4f', roughness: 0.95, metalness: 0 })
+  const bulbMat = new THREE.MeshBasicMaterial({ color: fx.bulb ?? '#ffcf87', toneMapped: false, transparent: true, opacity: 0 })
+  const bulbBase = new THREE.Color(fx.bulb ?? '#ffcf87')
+  for (const layer of ctx.layers) {
+    for (const w of layer.windows) {
+      if (w.w < 0.3 || w.h < 0.4 || ctx.random() > fx.share) continue
+      const z = ctx.cardDepth + 0.03 + (w.dz ?? 0)
+      const top = w.y + w.h / 2
+      const sag = Math.min(w.h * 0.25, w.w * 0.4)
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(w.x - w.w / 2, top, z),
+        new THREE.Vector3(w.x, top - sag * 2, z),
+        new THREE.Vector3(w.x + w.w / 2, top, z),
+      )
+      const garland = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, Math.max(0.035, w.w * 0.11), 6), mat)
+      layer.pivot.add(garland)
+      for (const t of [0.2, 0.5, 0.8]) {
+        const bulb = new THREE.Mesh(new THREE.CircleGeometry(Math.max(0.025, w.w * 0.08), 8), bulbMat)
+        bulb.position.copy(curve.getPoint(t)).setZ(z + 0.03)
+        layer.pivot.add(bulb)
+      }
+    }
+  }
+  return ({ lightLevel }) => {
+    bulbMat.opacity = lightLevel
+    bulbMat.color.copy(bulbBase).multiplyScalar(1 + 2 * lightLevel)
+  }
+}
+
+const EFFECTS = { snowfall, snowcaps, stringLights, windowStars, ice, trees, windowGarlands }
 export const EFFECT_TYPES = Object.keys(EFFECTS)
 
 // Builds the variant's effects that this city allows, and returns one update.
