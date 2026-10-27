@@ -46,5 +46,6 @@ export const sv = {
     aboutBuild: 'Bygg din egen: hämta koden och be en AI-agent för kod, till exempel Claude Code, att "Bygga Göteborg". Agenten följer AGENTS.md i koden, och du kan behålla resultatet själv eller skicka det till Lidscape.',
     aboutSource: 'Koden på GitHub',
     aboutVersion: 'Version {version}',
+    close: 'Stäng',
   },
 }
