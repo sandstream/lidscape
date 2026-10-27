@@ -115,6 +115,13 @@ function checkSettings(at, list) {
     settingIds.set(st.id, at)
   }
 }
+// How to use a theme or variant: shown text, one line per item, in the window
+// that opens the first time someone picks it.
+function checkHowTo(at, list) {
+  if (list === undefined) return
+  if (!Array.isArray(list) || !list.length) return fail(at, 'howTo must list at least one line, or be left out')
+  list.forEach((line, i) => !text(line) && fail(at, `howTo ${i} ${TEXT_RULE}`))
+}
 function checkFolder(folder, list, label) {
   const files = readdirSync(new URL(`../src/${folder}/`, import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
   const listed = list.map((x) => x.id)
@@ -132,6 +139,8 @@ for (const theme of THEMES) {
   const at = `theme ${theme.id}`
   for (const step of Object.keys(theme.post ?? {})) if (!POST_STEPS.includes(step)) fail(at, `post step ${step} is unknown; use ${POST_STEPS.join(', ')}`)
   checkSettings(at, theme.settings)
+  checkHowTo(at, theme.howTo)
+  if (theme.post?.tiltShift && !theme.howTo) fail(at, 'tiltShift follows the pointer: say so in howTo')
   const ts = theme.post?.tiltShift
   if (ts && !(theme.settings ?? []).some((st) => st.id === ts.setting)) fail(at, `tiltShift.setting ${ts.setting} is not in the theme's settings`)
 }
@@ -141,6 +150,7 @@ const variantIds = checkFolder('variants', VARIANTS, 'variant')
 for (const variant of VARIANTS) {
   const at = `variant ${variant.id}`
   checkSettings(at, variant.settings)
+  checkHowTo(at, variant.howTo)
   const ids = (variant.settings ?? []).map((st) => st.id)
   ;(variant.effects ?? []).forEach((fx, i) => {
     const fw = `${at} effect ${i} (${fx.type})`

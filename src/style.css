@@ -174,3 +174,20 @@ button:disabled { opacity: 0.5; cursor: default; }
 #hud-update span { flex-basis: 100%; }
 #hud-update[hidden], #update-check[hidden] { display: none; }
 #update-check { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+
+#howto {
+  width: min(440px, calc(100vw - 32px));
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  color: inherit;
+}
+#howto::backdrop { background: rgb(0 0 0 / 0.45); }
+#howto h2 { margin: 0 0 12px; font: 400 26px/1.1 var(--display); }
+#howto ul { margin: 0 0 16px; padding-left: 18px; display: grid; gap: 8px; line-height: 1.4; }
+#howto li.own { color: var(--accent); }
+#about { margin: 0 0 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.45; }
+#about h3 { margin: 0 0 6px; color: var(--ink); font: 400 19px/1.1 var(--display); }
+#about p { margin: 0 0 6px; }
+#about a { color: var(--accent); }

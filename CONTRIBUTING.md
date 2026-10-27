@@ -101,6 +101,15 @@ export const miniature = {
 }
 ```
 
+When the theme is used in a way that does not show, say how in `howTo`: one
+line per item, in every base language. The lines open in a window the first
+time someone picks the theme, before the general controls. A theme with
+`tiltShift` must have them, because the sharp band follows the pointer:
+
+```js
+  howTo: [{ sv: 'Det skarpa bandet följer muspekaren.', en: 'The sharp band follows the pointer.' }],
+```
+
 A new post step goes in `src/post.js` and in `POST_STEPS` in
 `tools/check-cities.mjs`. Measure it: the page must keep its frame rate on an
 Apple Silicon Mac, and a slow Mac falls back to lower quality.
@@ -132,6 +141,8 @@ Rules for variants:
    cards, and put decorations on a card's pivot so they fold with it.
 3. A new effect type goes in `src/effects.js` and in `EFFECT_TYPES` in
    `tools/check-cities.mjs`.
+4. A variant that changes how Lidscape is used says so in `howTo`, as a theme
+   does.
 
 Theme and variant settings share the URL, so their ids must differ:
 `?theme=miniature&focus=0.4&variant=christmas&snow=0.3`.

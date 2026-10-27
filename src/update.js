@@ -57,7 +57,7 @@ export function watchUpdates({ t, hud }) {
     show()
   }
 
-  download.addEventListener('click', () => found && invoke('open_release', { url: found.url }).catch(() => {}))
+  download.addEventListener('click', () => found && invoke('open_link', { url: found.url }).catch(() => {}))
   later.addEventListener('click', () => {
     if (found) write(LATER_ITEM, found.version)
     show()
