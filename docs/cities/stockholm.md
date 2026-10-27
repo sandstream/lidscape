@@ -1,5 +1,7 @@
 # Stockholm
 
+Coordinates: 59.324° N, 18.068° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Stockholm point, version 5.1.2.
+
 Proportion ratios ("width ≈ 1/6 of height") are visual estimates for drawing. Heights and years are sourced.
 
 ## Viewpoint

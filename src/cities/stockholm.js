@@ -316,23 +316,7 @@ function slottet(x, w = 17, h = 9.4) {
 function katarinaKyrka(x) {
   const drumY = 12.2
   const dome = arc(0, drumY, 2.35, 0, Math.PI * 0.42, 8)
-  const turret = (dx) => ({
-    type: 'outline',
-    x: x + dx,
-    tint: '#ecdcb0',
-    points: mirrored([
-      [0.42, 0],
-      [0.42, 12.4],
-      [0.55, 12.4],
-      [0.55, 12.7],
-      [0.32, 13.2],
-      [0.12, 13.8],
-      [0.03, 14.4],
-    ]),
-  })
   return [
-    turret(-2.75),
-    turret(2.75),
     {
       type: 'outline',
       x,
@@ -340,7 +324,21 @@ function katarinaKyrka(x) {
       points: mirrored([
         [3.6, 0],
         [3.6, 10.2],
-        [2.3, 11.4],
+        // The corner towers share this outline with the church. Separate
+        // outlines left visible paper edges inside its pale facade.
+        [3.17, 10.6],
+        [3.17, 12.4],
+        [3.3, 12.4],
+        [3.3, 12.7],
+        [3.07, 13.2],
+        [2.87, 13.8],
+        [2.78, 14.4],
+        [2.72, 14.4],
+        [2.63, 13.8],
+        [2.43, 13.2],
+        [2.2, 12.7],
+        [2.2, 12.4],
+        [2.3, 12.4],
         [2.3, drumY],
         ...dome,
         [0.45, 14.6],
@@ -411,6 +409,8 @@ const MIDDLE = '#b7aea2'
 export const stockholm = {
   id: 'stockholm',
   name: 'Stockholm',
+  lat: 59.324,
+  lon: 18.068,
   // Blue hour over Riddarfjärden: deep blue overhead, the last warm light low in the west.
   sky: { top: '#14203d', horizon: '#e3a06e', blend: [0.44, 0.64] },
   windows: { dark: '#2b3240', litShare: 0.65 },

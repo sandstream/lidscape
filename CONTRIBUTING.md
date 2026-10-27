@@ -22,6 +22,7 @@ the model. The file names:
 - the ordinary buildings that fill the rows between them,
 - the city's traits (see below),
 - a source for every height and year.
+- latitude and longitude for the city, with a source for both coordinates.
 
 The id is lower case ASCII with hyphens: `goteborg`, `new-york`.
 
@@ -55,6 +56,9 @@ traits: { snow: true, adventStars: true },   // Stockholm
 traits: { snow: false, adventStars: false }, // Nairobi
 ```
 
+Set `lat` and `lon` on the city definition. The world map places the city
+automatically. Add a `Coordinates:` line with the source URL to its research file.
+
 Variants read the traits, so Christmas in Nairobi gets string lights but no snow.
 
 Give each landmark a hover label with its name and one line of facts, taken
@@ -73,14 +77,19 @@ Three rules keep a skyline readable:
 
 ## 3. Check and send
 
+Add `src/cities/<id>.test.js`. Test the city's landmarks and layer order.
+
 ```bash
+bun install --frozen-lockfile
+npx playwright install chromium
+npm test
 python3 tools/serve.py
 open "http://localhost:5173/?city=<id>"
 node tools/check-cities.mjs
 ```
 
 Open the pull request with a screenshot of the city fully open and with the
-lights on. The `Cities` check runs the same script on GitHub.
+lights on. The `Checks` workflow runs the tests and city check on GitHub.
 
 # Add a theme
 

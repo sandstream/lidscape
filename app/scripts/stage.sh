@@ -8,6 +8,7 @@ rm -rf web
 mkdir -p web
 cp "$ROOT/index.html" web/
 cp -R "$ROOT/src" "$ROOT/assets" web/
+find web/src -type f \( -name '*.test.js' -o -name '*.test-support.js' \) -delete
 mkdir -p src-tauri/binaries
 swiftc -O "$ROOT/bridge/LidBridge.swift" -o src-tauri/binaries/lid-bridge-aarch64-apple-darwin
 echo "Staged web/ and binaries/lid-bridge"

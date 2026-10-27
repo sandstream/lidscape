@@ -536,9 +536,10 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
   const sky = new THREE.Mesh(
     new THREE.PlaneGeometry(400, 160),
     new THREE.ShaderMaterial({
-      uniforms: { top: { value: new THREE.Color(def.sky.top) }, horizon: { value: new THREE.Color(def.sky.horizon) } },
+      uniforms: { top: { value: new THREE.Color(def.sky.top) }, horizon: { value: new THREE.Color(def.sky.horizon) }, alpha: { value: 1 } },
       vertexShader: 'varying float vY; void main(){ vY = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; varying float vY; void main(){ gl_FragColor = vec4(mix(horizon, top, smoothstep(${blend[0].toFixed(3)}, ${blend[1].toFixed(3)}, vY)), 1.0); }`,
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform float alpha; varying float vY; void main(){ gl_FragColor = vec4(mix(horizon, top, smoothstep(${blend[0].toFixed(3)}, ${blend[1].toFixed(3)}, vY)), alpha); }`,
+      transparent: true,
       depthWrite: false,
     })
   )
@@ -561,7 +562,10 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
   root.add(moon)
 
   // Page (floor) and water
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(240, 140), paper(def.floor))
+  const floorMaterial = paper(def.floor).clone()
+  floorMaterial.transparent = true
+  floorMaterial.depthWrite = false
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(240, 140), floorMaterial)
   floor.rotation.x = -Math.PI / 2
   floor.position.z = -60
   floor.receiveShadow = true
@@ -570,7 +574,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
   const waterDepth = def.water.zTo - def.water.zFrom
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(240, waterDepth),
-    new THREE.MeshStandardMaterial({ color: def.water.color, roughness: 0.7, metalness: 0 })
+    new THREE.MeshStandardMaterial({ color: def.water.color, roughness: 0.7, metalness: 0, transparent: true, depthWrite: false })
   )
   water.rotation.x = -Math.PI / 2
   water.position.set(0, 0.01, def.water.zFrom + waterDepth / 2)
@@ -727,6 +731,13 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
   })
 
   const tmp = new THREE.Color()
+  let flight = 0
+  function setFlightProgress(value) {
+    flight = clamp01(value)
+    sky.material.uniforms.alpha.value = 1 - flight
+    floor.material.opacity = 1 - flight
+    water.material.opacity = 1 - flight
+  }
   function paintWindows(win, level, time) {
     for (let i = 0; i < win.thresholds.length; i++) {
       const th = win.thresholds[i]
@@ -756,9 +767,9 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     }
 
     const night = clamp01((progress - 0.25) / 0.5)
-    starMat.opacity = night
-    moon.material.opacity = night
-    streakMat.opacity = lightLevel * 0.35
+    starMat.opacity = night * (1 - flight)
+    moon.material.opacity = night * (1 - flight)
+    streakMat.opacity = lightLevel * 0.35 * (1 - flight)
     glow.intensity = lightLevel * 6
     mirror.material.uniforms.time.value = time
     for (const st of streaks) st.mesh.scale.x = 0.5 + 0.5 * Math.sin(time * st.speed + st.phase) ** 2
@@ -818,7 +829,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     notMirrored.forEach((o, i) => (o.visible = shown[i]))
   }
 
-  return { update, pick, setReflections, renderReflection }
+  return { root, update, pick, setReflections, setFlightProgress, renderReflection }
 }
 
 // Water: the mirrored city read at the fragment's own screen position, shifted

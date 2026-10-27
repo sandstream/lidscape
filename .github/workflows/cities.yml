@@ -1,4 +1,4 @@
-name: Cities
+name: Checks
 
 on:
   pull_request:
@@ -13,5 +13,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm install -g bun@1.3.10
+      - run: bun install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
       - run: node tools/check-cities.mjs
       - run: node tools/check-camera.mjs
+      - run: node tools/check-lid.mjs

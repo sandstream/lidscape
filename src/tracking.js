@@ -12,7 +12,7 @@ const HFOV_DEG = 62 // FaceTime HD camera, approx.
 const GESTURE_FRAMES = 8 // frames a pose must hold before it counts
 const STALL_MS = 2000 // no new picture for this long: the camera has stopped
 
-export function createTracker({ screenHeight }) {
+export function createTracker({ screenHeight, vision = { FilesetResolver, FaceLandmarker, HandLandmarker } }) {
   // camera: the deviceId in use. stalled: the camera sends no picture, for
   // example because it was unplugged or another app stopped it.
   const state = { eye: null, gesture: null, running: false, camera: null, stalled: false }
@@ -126,14 +126,14 @@ export function createTracker({ screenHeight }) {
     }
     video.requestVideoFrameCallback?.(count)
 
-    const files = await FilesetResolver.forVisionTasks(WASM)
+    const files = await vision.FilesetResolver.forVisionTasks(WASM)
     ;[face, hand] = await Promise.all([
-      FaceLandmarker.createFromOptions(files, {
+      vision.FaceLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'GPU' },
         runningMode: 'VIDEO',
         numFaces: 1,
       }),
-      HandLandmarker.createFromOptions(files, {
+      vision.HandLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
         runningMode: 'VIDEO',
         numHands: 1,

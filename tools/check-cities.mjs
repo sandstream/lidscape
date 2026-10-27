@@ -8,6 +8,8 @@ import { THEMES } from '../src/themes/index.js'
 import { VARIANTS } from '../src/variants/index.js'
 import { TRAITS } from '../src/traits.js'
 import { LANGUAGES, BASE } from '../src/lang/index.js'
+import { CAPITALS, LAND } from '../src/map-data.js'
+import { layoutCities, layoutCapitals, mapPoint, MAP_WIDTH, MAP_HEIGHT } from '../src/map-layout.js'
 
 // Keep in step with BUILDERS in src/city.js.
 const ITEM_TYPES = ['house', 'tower', 'hill', 'arcade', 'lamp', 'outline']
@@ -28,7 +30,42 @@ const text = (v) =>
     Object.entries(v).every(([l, s]) => l in LANGUAGES && typeof s === 'string' && s))
 const TEXT_RULE = `must be a string or { ${BASE.join(', ')} } (other languages optional)`
 
-const files = readdirSync(new URL('../src/cities/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
+if (CAPITALS.length !== 193) fail('world map', 'list one capital for each of the 193 UN member states')
+if (new Set(CAPITALS.map(([code]) => code)).size !== CAPITALS.length) fail('world map', 'country codes must be unique')
+for (const [code, name, country, lat, lon] of CAPITALS) {
+  if (!/^[A-Z]{3}$/.test(code) || !name || !country || !finite(lat) || lat < -90 || lat > 90 || !finite(lon) || lon < -180 || lon > 180) fail('world map', `invalid capital ${code}`)
+}
+if (!LAND.length || LAND.some((ring) => ring.length < 3 || ring.some(([lon, lat]) => !finite(lon) || Math.abs(lon) > 180 || !finite(lat) || Math.abs(lat) > 90))) fail('world map', 'land polygons are invalid')
+const northeast = mapPoint(90, 180)
+if (Math.abs(northeast.x - MAP_WIDTH / 2) > 1e-9 || Math.abs(northeast.y - MAP_HEIGHT / 2) > 1e-9) {
+  fail('world map', 'marker projection must cover the full map texture')
+}
+const closeCities = layoutCities([
+  { id: 'stockholm', lat: 59.324, lon: 18.068 },
+  { id: 'oslo', lat: 59.913, lon: 10.752 },
+  { id: 'copenhagen', lat: 55.676, lon: 12.568 },
+  { id: 'helsinki', lat: 60.170, lon: 24.938 },
+])
+for (let i = 0; i < closeCities.length; i++) {
+  for (let j = i + 1; j < closeCities.length; j++) {
+    const a = closeCities[i].point
+    const b = closeCities[j].point
+    if (Math.hypot(a.x - b.x, a.y - b.y) < 2.1) fail('world map', `miniatures for ${closeCities[i].city.id} and ${closeCities[j].city.id} overlap`)
+  }
+}
+const capitalTargets = layoutCapitals(CAPITALS, layoutCities(CITIES))
+for (let i = 0; i < capitalTargets.length; i++) {
+  const a = capitalTargets[i]
+  if ((a.truePoint.x < 0) !== (a.point.x < 0)) fail('world map', `${a.capital[1]} moved across the book spine`)
+  for (let j = i + 1; j < capitalTargets.length; j++) {
+    const b = capitalTargets[j]
+    if (Math.hypot(a.point.x - b.point.x, a.point.y - b.point.y) < 0.64) {
+      fail('world map', `capital markers for ${a.capital[1]} and ${b.capital[1]} overlap`)
+    }
+  }
+}
+
+const files = readdirSync(new URL('../src/cities/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js' && !f.endsWith('.test.js'))
 const ids = CITIES.map((c) => c.id)
 for (const f of files) {
   if (!ids.includes(f.replace(/\.js$/, ''))) fail(f, 'file is not listed in src/cities/index.js')
@@ -43,6 +80,10 @@ for (const city of CITIES) {
   if (!files.includes(`${city.id}.js`)) fail(at, `src/cities/${city.id}.js must hold this city`)
   if (!existsSync(new URL(`../docs/cities/${city.id}.md`, import.meta.url))) fail(at, `docs/cities/${city.id}.md with sources is missing`)
   if (!text(city.name)) fail(at, `name ${TEXT_RULE}`)
+  if (!finite(city.lat) || city.lat < -90 || city.lat > 90) fail(at, 'lat must be a latitude from -90 to 90, with a source in the city research file')
+  if (!finite(city.lon) || city.lon < -180 || city.lon > 180) fail(at, 'lon must be a longitude from -180 to 180, with a source in the city research file')
+  const research = new URL(`../docs/cities/${city.id}.md`, import.meta.url)
+  if (existsSync(research) && !readFileSync(research, 'utf8').includes('Coordinates:')) fail(at, 'source coordinates in the city research file')
   for (const trait of Object.keys(TRAITS)) {
     if (typeof city.traits?.[trait] !== 'boolean') fail(at, `traits.${trait} must be true or false (${TRAITS[trait]}), with a source`)
   }
@@ -84,7 +125,7 @@ for (const city of CITIES) {
 
 // Languages: the same keys as English, and the app must declare each one, or a
 // Mac in that language opens the app in English.
-const langFiles = readdirSync(new URL('../src/lang/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
+const langFiles = readdirSync(new URL('../src/lang/', import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js' && !f.endsWith('.test.js'))
 for (const f of langFiles) if (!(f.replace(/\.js$/, '') in LANGUAGES)) fail(`lang/${f}`, 'file is not listed in src/lang/index.js')
 const plist = readFileSync(new URL('../app/src-tauri/Info.plist', import.meta.url), 'utf8')
 const appFiles = JSON.parse(readFileSync(new URL('../app/src-tauri/tauri.conf.json', import.meta.url), 'utf8')).bundle?.macOS?.files ?? {}
@@ -102,7 +143,7 @@ for (const [code, l] of Object.entries(LANGUAGES)) {
   if (!existsSync(path) || !readFileSync(path, 'utf8').includes('NSCameraUsageDescription')) fail(at, `app/src-tauri/${strings} must translate NSCameraUsageDescription`)
 }
 
-const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality', 'lang']
+const RESERVED = ['city', 'theme', 'variant', 'progress', 'lights', 'quality', 'lang', 'view', 'enter']
 const settingIds = new Map()
 function checkSettings(at, list) {
   for (const st of list ?? []) {
@@ -123,7 +164,7 @@ function checkHowTo(at, list) {
   list.forEach((line, i) => !text(line) && fail(at, `howTo ${i} ${TEXT_RULE}`))
 }
 function checkFolder(folder, list, label) {
-  const files = readdirSync(new URL(`../src/${folder}/`, import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js')
+  const files = readdirSync(new URL(`../src/${folder}/`, import.meta.url)).filter((f) => f.endsWith('.js') && f !== 'index.js' && !f.endsWith('.test.js'))
   const listed = list.map((x) => x.id)
   for (const f of files) if (!listed.includes(f.replace(/\.js$/, ''))) fail(`${folder}/${f}`, `file is not listed in src/${folder}/index.js`)
   for (const x of list) {

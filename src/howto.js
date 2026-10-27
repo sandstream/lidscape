@@ -54,16 +54,8 @@ export function setupHowTo({ t, lang, theme, variant }) {
   about.querySelector('.about-contribute a').textContent = t.aboutContributeLink
   about.querySelector('.about-build').textContent = t.aboutBuild
   about.querySelector('.about-source').textContent = t.aboutSource
-  // In the Mac app a link would replace the picture in the window, so the app
-  // opens it in the browser instead.
   const tauri = window.__TAURI__
   if (tauri) {
-    for (const a of about.querySelectorAll('a')) {
-      a.addEventListener('click', (e) => {
-        e.preventDefault()
-        tauri.core.invoke('open_link', { url: a.href }).catch(() => {})
-      })
-    }
     tauri.app
       ?.getVersion()
       .then((v) => (about.querySelector('.about-version').textContent = t.aboutVersion.replace('{version}', v)))

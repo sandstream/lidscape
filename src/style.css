@@ -59,6 +59,75 @@ button, input, select { font: inherit; color: inherit; }
   display: block;
 }
 
+#map-toggle {
+  position: fixed;
+  top: 36px;
+  right: 18px;
+  z-index: 2;
+  padding: 5px 11px 5px 5px;
+  border: 1px solid #67818a;
+  border-radius: 7px;
+  background: rgb(12 29 42 / 0.90);
+  box-shadow: 0 5px 18px rgb(0 0 0 / 0.28);
+}
+
+.map-toggle-art {
+  width: 44px;
+  height: 29px;
+  border: 1px solid #526e75;
+  border-radius: 2px;
+  background:
+    radial-gradient(ellipse at 26% 35%, #65808a 0 13%, transparent 15%),
+    radial-gradient(ellipse at 40% 67%, #65808a 0 10%, transparent 12%),
+    radial-gradient(ellipse at 69% 43%, #65808a 0 17%, transparent 19%),
+    linear-gradient(90deg, transparent 49%, #0a1723 49% 51%, transparent 51%),
+    #203b4a;
+}
+
+.map-toggle-text { font-size: 12px; }
+
+#map-info {
+  position: fixed;
+  top: 42px;
+  left: 18px;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  width: min(285px, calc(100vw - 36px));
+  max-height: calc(100vh - 58px);
+  overflow-y: auto;
+  padding: 11px 13px;
+  border: 1px solid #47606a;
+  border-radius: 7px;
+  background: rgb(12 29 42 / 0.88);
+  color: var(--muted);
+  font-size: 12px;
+}
+#map-info[hidden] { display: none; }
+#map-title { font: 400 21px/1.1 var(--display); color: var(--ink); }
+#map-info a { color: var(--accent); }
+#map-cities { display: flex; gap: 5px; flex-wrap: wrap; margin: 3px 0; }
+#map-cities button { padding: 3px 8px; border-color: #677d7e; }
+#map-selection { display: grid; gap: 3px; padding: 7px 0; border-top: 1px solid #47606a; }
+#map-selection[hidden] { display: none; }
+#map-selected { color: var(--ink); font: italic 400 18px/1.1 var(--display); }
+#map-nearby { display: flex; flex-wrap: wrap; gap: 5px; }
+#map-nearby:empty { display: none; }
+#map-nearby button { padding: 2px 6px; }
+#map-nearby button[aria-pressed="true"] { border-color: var(--accent); }
+#map-progress-label { color: var(--muted); }
+#map-lang { justify-self: start; }
+
+#map-zoom {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+}
+#map-zoom output { min-width: 43px; text-align: center; font-variant-numeric: tabular-nums; }
+#map-zoom button { min-width: 30px; justify-content: center; }
+body.map-view #hud { display: none; }
+
 #no-webgl { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; padding: 32px; text-align: center; font-size: 16px; }
 
 #label {

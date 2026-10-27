@@ -1,7 +1,16 @@
 {
   "name": "lidscape-workspace",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0",
+  "type": "module",
   "license": "MIT",
-  "workspaces": ["app"]
+  "workspaces": ["app"],
+  "scripts": {
+    "test": "node --test --test-concurrency=2"
+  },
+  "devDependencies": {
+    "@mediapipe/tasks-vision": "0.10.14",
+    "@playwright/test": "1.58.2",
+    "three": "0.160.0"
+  }
 }
