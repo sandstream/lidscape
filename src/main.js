@@ -14,6 +14,7 @@ import { setOffAxis } from './offaxis.js'
 import { connectLid } from './lid.js'
 import { createTracker } from './tracking.js'
 import { LANGUAGES, pickLang, local } from './lang/index.js'
+import { watchUpdates } from './update.js'
 
 // The screen is modelled at real size: MacBook Pro 14" is about 30 × 19.5 cm.
 const SCREEN_H = 19.5
@@ -176,6 +177,8 @@ document.getElementById('progress-label').textContent = t.progress
 for (const li of document.querySelectorAll('#hud-status li')) {
   li.querySelector('.label').textContent = t[li.dataset.source]
 }
+
+watchUpdates({ t, hud })
 
 function setStatus(source, value) {
   document.querySelector(`[data-source="${source}"]`).dataset.state = value
