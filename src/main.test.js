@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
+import { useLocalModules } from './browser.test-support.js'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const url = 'http://127.0.0.1:5189/'
@@ -40,6 +41,7 @@ test('the browser can switch views, fold the map, zoom, and open the city guide'
         sendAngle(angle) { this.onmessage({ data: JSON.stringify({ angle }) }) }
       }
     })
+    await useLocalModules(page)
     await page.goto(`${url}?view=map&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => window.lidscape?.worldMap)
     if (await page.locator('#howto').evaluate((dialog) => dialog.open)) await page.locator('#howto button').click()
