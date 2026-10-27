@@ -31,5 +31,7 @@ export const sv = {
     updateLater: 'Senare',
     updateCheck: 'Leta efter nya versioner',
     updateInfo: 'Lidscape frågar GitHub vid start och en gång per dygn om det finns en nyare version. Bara listan över versioner hämtas. Ingenting om dig skickas, men GitHub ser datorns IP-adress.',
+    camera: 'Kamera',
+    cameraStalled: 'Kameran skickar ingen bild. En annan app kan ha stoppat den, eller så kopplades den ur. Stäng av och slå på kameran.',
   },
 }

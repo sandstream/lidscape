@@ -111,6 +111,7 @@ const slider = document.getElementById('progress')
 const cameraBtn = document.getElementById('camera-btn')
 const lightsBtn = document.getElementById('lights-btn')
 const hint = document.getElementById('hud-hint')
+const cameraPicker = document.getElementById('camera')
 
 const cityName = local(cityDef.name, lang)
 document.getElementById('hud-title').innerHTML = t.title.replace('{city}', cityName)
@@ -238,7 +239,7 @@ function refreshHud() {
   if (!cameraBtn.disabled && !cameraBtn.dataset.none) cameraBtn.textContent = input.cameraOn ? t.cameraOff : t.cameraOn
   hint.textContent = [
     lid.noSensor ? t.hintNoSensor : lid.connected ? t.hintLid : t.hintManual,
-    input.cameraOn ? t.hintHand : '',
+    input.cameraOn ? (tracker.state.stalled ? t.cameraStalled : t.hintHand) : '',
     quality === 'low' ? t.hintLowQuality : '',
   ]
     .filter(Boolean)
@@ -306,17 +307,30 @@ function toggleLights() {
 }
 lightsBtn.addEventListener('click', toggleLights)
 
-cameraBtn.addEventListener('click', async () => {
-  if (input.cameraOn) {
-    tracker.stop()
-    input.cameraOn = false
-    refreshHud()
-    return
+// The camera picker shows when the Mac has more than one camera, and remembers
+// the choice. Without a choice the Mac's own camera is used (see camera.js).
+const CAMERA_ITEM = 'lidscape.camera'
+function savedCamera() {
+  try {
+    return localStorage.getItem(CAMERA_ITEM)
+  } catch {
+    return null
   }
+}
+
+async function fillCameraPicker() {
+  const cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput')
+  cameraPicker.replaceChildren(...cameras.map((c, i) => new Option(c.label || `${t.camera} ${i + 1}`, c.deviceId, false, c.deviceId === tracker.state.camera)))
+  cameraPicker.hidden = !input.cameraOn || cameras.length < 2
+}
+cameraPicker.setAttribute('aria-label', t.camera)
+navigator.mediaDevices?.addEventListener?.('devicechange', () => input.cameraOn && fillCameraPicker())
+
+async function startCamera() {
   cameraBtn.disabled = true
   cameraBtn.textContent = t.cameraLoading
   try {
-    await tracker.start()
+    await tracker.start(savedCamera())
     recalibrate()
     input.cameraOn = true
   } catch (err) {
@@ -325,8 +339,26 @@ cameraBtn.addEventListener('click', async () => {
     tracker.stop()
   } finally {
     cameraBtn.disabled = false
+    await fillCameraPicker().catch(() => {})
     refreshHud()
   }
+}
+
+cameraPicker.addEventListener('change', () => {
+  try {
+    localStorage.setItem(CAMERA_ITEM, cameraPicker.value)
+  } catch {}
+  tracker.stop()
+  input.cameraOn = false
+  startCamera()
+})
+
+cameraBtn.addEventListener('click', () => {
+  if (!input.cameraOn) return startCamera()
+  tracker.stop()
+  input.cameraOn = false
+  cameraPicker.hidden = true
+  refreshHud()
 })
 
 // A Mac without a camera gets a plain answer on the button instead of an error.
