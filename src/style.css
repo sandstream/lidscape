@@ -169,3 +169,8 @@ button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: 0.5; cursor: default; }
 
 #hud-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+#hud-update { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+#hud-update span { flex-basis: 100%; }
+#hud-update[hidden], #update-check[hidden] { display: none; }
+#update-check { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }

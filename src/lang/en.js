@@ -26,5 +26,10 @@ export const en = {
     hintLowQuality: 'Lower picture quality, so that the picture runs smoothly on this computer.',
     noCamera: 'No camera',
     noWebgl: 'Lidscape needs WebGL 2, and this browser or computer does not have it.',
+    updateAvailable: 'Lidscape {version} is available.',
+    updateDownload: 'Download',
+    updateLater: 'Later',
+    updateCheck: 'Look for new versions',
+    updateInfo: 'Lidscape asks GitHub at start and once a day if there is a newer version. Only the list of versions is fetched. Nothing about you is sent, but GitHub sees the computer\'s IP address.',
   },
 }

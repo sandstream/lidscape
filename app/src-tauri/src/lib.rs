@@ -1,3 +1,6 @@
+mod update;
+
+
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
@@ -31,12 +34,37 @@ fn mac_language() -> String {
     String::new()
 }
 
+/// A newer Lidscape on GitHub, or None. None also when GitHub cannot be reached.
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Option<update::Update> {
+    let current = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        update::check(&current).unwrap_or_else(|err| {
+            eprintln!("Lidscape: update check failed: {err:#}");
+            None
+        })
+    })
+    .await
+    .unwrap_or(None)
+}
+
+/// Opens a release page in the browser. Only pages in the Lidscape repository.
+#[tauri::command]
+fn open_release(url: String) -> Result<(), String> {
+    if !url.starts_with(update::PAGE_PREFIX) || url.chars().any(char::is_whitespace) {
+        return Err("not a release page".into());
+    }
+    Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// The running bridge, stopped when the app quits. If another bridge already holds
 /// the port, this one exits at once and the page uses the other.
 struct Bridge(Mutex<Option<Child>>);
 
 pub fn run() {
     let app = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![check_update, open_release])
         .setup(|app| {
             let child = match Command::new(bridge_path()).spawn() {
                 Ok(child) => Some(child),
