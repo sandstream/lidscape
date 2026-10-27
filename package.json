@@ -1,0 +1,7 @@
+{
+  "name": "lidscape-workspace",
+  "private": true,
+  "version": "0.1.1",
+  "license": "MIT",
+  "workspaces": ["app"]
+}

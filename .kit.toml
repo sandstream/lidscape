@@ -1,0 +1,11 @@
+# Kit tools for the Lidscape workspace.
+# The workspace covers the Bun app, and OSV scans the Rust lockfile.
+
+[tools]
+semgrep = "latest"
+"npm:@socketsecurity/cli" = "latest"
+"aqua:trufflesecurity/trufflehog" = "latest"
+"npm:license-checker" = "25.0.1"
+
+[air_gap]
+enabled = false
