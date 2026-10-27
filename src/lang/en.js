@@ -33,5 +33,11 @@ export const en = {
     updateInfo: 'Lidscape asks GitHub at start and once a day if there is a newer version. Only the list of versions is fetched. Nothing about you is sent, but GitHub sees the computer\'s IP address.',
     camera: 'Camera',
     cameraStalled: 'The camera sends no picture. Another app may have stopped it, or it was unplugged. Turn the camera off and on.',
+    help: 'How to',
+    howToTitle: 'How to use Lidscape',
+    howToLid: 'Open and close the MacBook lid to open the book. On a Mac without a lid sensor, scroll or drag the slider.',
+    howToPointer: 'Without the camera, the pointer moves the view. Hold the pointer over a landmark to see its name.',
+    howToCamera: 'Turn on the camera, and the view follows your head. An open hand turns the lights on, a fist turns them off.',
+    howToOk: 'Got it',
   },
 }

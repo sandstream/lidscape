@@ -33,5 +33,11 @@ export const sv = {
     updateInfo: 'Lidscape frågar GitHub vid start och en gång per dygn om det finns en nyare version. Bara listan över versioner hämtas. Ingenting om dig skickas, men GitHub ser datorns IP-adress.',
     camera: 'Kamera',
     cameraStalled: 'Kameran skickar ingen bild. En annan app kan ha stoppat den, eller så kopplades den ur. Stäng av och slå på kameran.',
+    help: 'Så styr du',
+    howToTitle: 'Så styr du Lidscape',
+    howToLid: 'Öppna och stäng MacBookens lock för att öppna boken. På en Mac utan locksensor scrollar du eller drar i reglaget.',
+    howToPointer: 'Utan kameran flyttar muspekaren vyn. Håll muspekaren över ett landmärke för att se vad det heter.',
+    howToCamera: 'Slå på kameran, så följer vyn ditt huvud. Öppen hand tänder ljuset, knuten hand släcker.',
+    howToOk: 'Jag förstår',
   },
 }
