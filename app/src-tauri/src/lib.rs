@@ -48,11 +48,18 @@ async fn check_update(app: tauri::AppHandle) -> Option<update::Update> {
     .unwrap_or(None)
 }
 
-/// Opens a release page in the browser. Only pages in the Lidscape repository.
+const REPO: &str = "https://github.com/sandstream/lidscape";
+
+/// True for the repository's own pages, such as a release or CONTRIBUTING.md.
+fn repo_link(url: &str) -> bool {
+    !url.chars().any(char::is_whitespace) && (url == REPO || url.starts_with(&format!("{REPO}/")))
+}
+
+/// Opens a page of the Lidscape repository in the browser, and no other page.
 #[tauri::command]
-fn open_release(url: String) -> Result<(), String> {
-    if !url.starts_with(update::PAGE_PREFIX) || url.chars().any(char::is_whitespace) {
-        return Err("not a release page".into());
+fn open_link(url: String) -> Result<(), String> {
+    if !repo_link(&url) {
+        return Err("not a Lidscape page".into());
     }
     Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?;
     Ok(())
@@ -64,7 +71,7 @@ struct Bridge(Mutex<Option<Child>>);
 
 pub fn run() {
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![check_update, open_release])
+        .invoke_handler(tauri::generate_handler![check_update, open_link])
         .setup(|app| {
             let child = match Command::new(bridge_path()).spawn() {
                 Ok(child) => Some(child),
@@ -94,4 +101,20 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opens_only_pages_in_the_repository() {
+        assert!(repo_link("https://github.com/sandstream/lidscape"));
+        assert!(repo_link("https://github.com/sandstream/lidscape/blob/main/CONTRIBUTING.md"));
+        assert!(repo_link("https://github.com/sandstream/lidscape/releases/tag/v0.1.1"));
+        assert!(!repo_link("https://github.com/sandstream/lidscape-releases"));
+        assert!(!repo_link("https://github.com/sandstream/lidscape/x y"));
+        assert!(!repo_link("https://evil.example/?https://github.com/sandstream/lidscape/"));
+        assert!(!repo_link("file:///etc/passwd"));
+    }
 }

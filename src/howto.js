@@ -1,6 +1,6 @@
 // How to use Lidscape: a window that opens the first time someone sees a theme
 // or a variant. It lists the general controls and the theme's and variant's own
-// lines (howTo in src/themes and src/variants). "Got it" remembers that this
+// lines (howTo in src/themes and src/variants), and a part about the app. "Got it" remembers that this
 // theme and variant have been seen; the Help button opens the window again.
 
 import { local } from './lang/index.js'
@@ -45,6 +45,30 @@ export function setupHowTo({ t, lang, theme, variant }) {
     } catch {}
     dialog.close()
   })
+
+  // About: what Lidscape is, how to add to it, and how to build your own.
+  const about = document.getElementById('about')
+  about.querySelector('h3').textContent = t.aboutTitle
+  about.querySelector('.about-text').textContent = t.aboutText
+  about.querySelector('.about-contribute span').textContent = t.aboutContribute
+  about.querySelector('.about-contribute a').textContent = t.aboutContributeLink
+  about.querySelector('.about-build').textContent = t.aboutBuild
+  about.querySelector('.about-source').textContent = t.aboutSource
+  // In the Mac app a link would replace the picture in the window, so the app
+  // opens it in the browser instead.
+  const tauri = window.__TAURI__
+  if (tauri) {
+    for (const a of about.querySelectorAll('a')) {
+      a.addEventListener('click', (e) => {
+        e.preventDefault()
+        tauri.core.invoke('open_link', { url: a.href }).catch(() => {})
+      })
+    }
+    tauri.app
+      ?.getVersion()
+      .then((v) => (about.querySelector('.about-version').textContent = t.aboutVersion.replace('{version}', v)))
+      .catch(() => {})
+  }
 
   const help = document.getElementById('help-btn')
   help.textContent = t.help

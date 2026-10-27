@@ -328,6 +328,16 @@ async function fillCameraPicker() {
 cameraPicker.setAttribute('aria-label', t.camera)
 navigator.mediaDevices?.addEventListener?.('devicechange', () => input.cameraOn && fillCameraPicker())
 
+// A new theme, city, variant or language reloads the page. The camera stays on
+// across that reload, but not when the app or the tab is opened again.
+const CAMERA_ON_ITEM = 'lidscape.cameraOn'
+function rememberCamera(on) {
+  try {
+    if (on) sessionStorage.setItem(CAMERA_ON_ITEM, '1')
+    else sessionStorage.removeItem(CAMERA_ON_ITEM)
+  } catch {}
+}
+
 async function startCamera() {
   cameraBtn.disabled = true
   cameraBtn.textContent = t.cameraLoading
@@ -335,6 +345,7 @@ async function startCamera() {
     await tracker.start(savedCamera())
     recalibrate()
     input.cameraOn = true
+    rememberCamera(true)
   } catch (err) {
     console.error('Lidscape: camera failed', err)
     hint.textContent = `${t.cameraError}: ${err.message}`
@@ -359,6 +370,7 @@ cameraBtn.addEventListener('click', () => {
   if (!input.cameraOn) return startCamera()
   tracker.stop()
   input.cameraOn = false
+  rememberCamera(false)
   cameraPicker.hidden = true
   refreshHud()
 })
@@ -373,6 +385,10 @@ navigator.mediaDevices
     cameraBtn.textContent = t.noCamera
   })
   .catch(() => {})
+
+try {
+  if (sessionStorage.getItem(CAMERA_ON_ITEM)) startCamera()
+} catch {}
 
 refreshHud()
 
