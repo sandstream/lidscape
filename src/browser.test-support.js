@@ -32,14 +32,20 @@ export async function withPage(port, query, init, run) {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     if (!ready) throw new Error('Lidscape test server did not start')
+    console.log('browser test: local server ready')
     browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    console.log('browser test: Chromium launched')
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => { errors.push(error.message); console.error('browser page error:', error.message) })
+    page.on('console', (message) => { if (message.type() === 'error') console.error('browser console error:', message.text()) })
+    page.on('requestfailed', (request) => console.error('browser request failed:', request.url(), request.failure()?.errorText))
     if (init) await page.addInitScript(init)
     await useLocalModules(page)
     await page.goto(`${base}${query}`, { waitUntil: 'domcontentloaded' })
+    console.log('browser test: document loaded')
     await page.waitForFunction(() => window.lidscape?.worldMap)
+    console.log('browser test: Lidscape ready')
     await run(page, errors)
   } finally {
     await browser?.close()

@@ -24,10 +24,14 @@ test('the browser can switch views, fold the map, zoom, and open the city guide'
   let browser
   try {
     await waitForServer()
+    console.log('main browser test: local server ready')
     browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    console.log('main browser test: Chromium launched')
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => { errors.push(error.message); console.error('main browser page error:', error.message) })
+    page.on('console', (message) => { if (message.type() === 'error') console.error('main browser console error:', message.text()) })
+    page.on('requestfailed', (request) => console.error('main browser request failed:', request.url(), request.failure()?.errorText))
     await page.addInitScript(() => {
       window.__openedLinks = []
       window.__TAURI__ = {
@@ -43,7 +47,9 @@ test('the browser can switch views, fold the map, zoom, and open the city guide'
     })
     await useLocalModules(page)
     await page.goto(`${url}?view=map&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    console.log('main browser test: document loaded')
     await page.waitForFunction(() => window.lidscape?.worldMap)
+    console.log('main browser test: Lidscape ready')
     if (await page.locator('#howto').evaluate((dialog) => dialog.open)) await page.locator('#howto button').click()
     assert.equal(await page.locator('#map-info').isVisible(), true)
     assert.equal(await page.locator('#camera-btn').isVisible(), false)
