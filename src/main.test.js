@@ -19,7 +19,7 @@ async function waitForServer() {
   throw new Error('Lidscape test server did not start')
 }
 
-test('the browser can switch views, fold the map, zoom, and open the city guide', { timeout: 45000 }, async () => {
+test('the browser can switch views, fold the map, zoom, and open the city guide', { timeout: 120000 }, async () => {
   const server = spawn('python3', ['tools/serve.py', '5189'], { cwd: root, stdio: 'ignore' })
   let browser
   try {

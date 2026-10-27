@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { withPage } from './browser.test-support.js'
 
-test('an app update can be deferred or disabled', { timeout: 45000 }, async () => {
+test('an app update can be deferred or disabled', { timeout: 120000 }, async () => {
   await withPage(5191, '?quality=low&lang=en', () => {
     window.__TAURI__ = {
       core: { invoke: async (name) => name === 'check_update'

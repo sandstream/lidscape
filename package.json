@@ -6,7 +6,7 @@
   "license": "MIT",
   "workspaces": ["app"],
   "scripts": {
-    "test": "node --test --test-concurrency=2"
+    "test": "node --test --test-concurrency=1"
   },
   "devDependencies": {
     "@mediapipe/tasks-vision": "0.10.14",
