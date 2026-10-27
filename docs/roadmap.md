@@ -5,7 +5,7 @@
 | Capability | Status |
 | --- | --- |
 | World map, zoom, city selection and separate menus | Built and checked in the browser and Mac app. |
-| Map fold from the lid | Built. The manual fold was checked. A physical lid close still needs a check. |
+| Map fold from the lid | Built. Peter confirmed the fold direction on a real MacBook. |
 | Mac screen saver | Planned. |
 | Desktop wallpaper | Planned. |
 | Separate menus for other motifs | Planned. |
