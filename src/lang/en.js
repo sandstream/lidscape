@@ -31,5 +31,7 @@ export const en = {
     updateLater: 'Later',
     updateCheck: 'Look for new versions',
     updateInfo: 'Lidscape asks GitHub at start and once a day if there is a newer version. Only the list of versions is fetched. Nothing about you is sent, but GitHub sees the computer\'s IP address.',
+    camera: 'Camera',
+    cameraStalled: 'The camera sends no picture. Another app may have stopped it, or it was unplugged. Turn the camera off and on.',
   },
 }
