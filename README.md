@@ -34,7 +34,15 @@ Use the screen saver's **Options** control to choose city, theme, variant and vi
 To remove it, delete `~/Library/Screen Savers/Lidscape.saver`.
 The screen saver uses the lid sensor and does not use the camera.
 
-Build the separate download with `sh screensaver/build-download.sh`.
+The build captures the Stockholm scene for the thumbnail in Mac settings.
+Build the separate download from the repository root:
+
+```bash
+bun install
+bunx playwright install chromium
+sh screensaver/build-download.sh
+```
+
 For a public release, set `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`,
 `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH`, then add `--notarize`.
 The ZIP file appears in `dist/` and can be attached to a GitHub release.

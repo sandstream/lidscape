@@ -10,5 +10,6 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>27.0</string>
   <key>NSPrincipalClass</key><string>LidscapeSaverView</string>
+  <key>ScreenSaverThumbnail</key><string>thumbnail</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

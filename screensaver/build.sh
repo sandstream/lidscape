@@ -18,6 +18,7 @@ VERSION=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' "$ROOT/app/src-tauri/tauri.con
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$CONTENTS/Info.plist"
 cp "$ROOT/screensaver/index.html" "$WEB/index.html"
 bun build --target=browser --format=iife --outfile="$WEB/saver.js" "$ROOT/src/saver-main.js"
+node "$ROOT/screensaver/generate-thumbnail.mjs" "$WEB/index.html" "$CONTENTS/Resources"
 node "$ROOT/screensaver/options.mjs" > "$CONTENTS/Resources/options.json"
 xcrun swiftc -O "$ROOT/bridge/LidBridge.swift" -o "$CONTENTS/Resources/lid-bridge"
 xcrun swiftc -emit-library -O -module-name LidscapeSaver -framework AppKit -framework ScreenSaver -framework WebKit \
