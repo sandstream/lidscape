@@ -40,7 +40,8 @@ To remove it, delete `~/Library/Screen Savers/LidscapeScreenSaver.saver`.
 The screen saver uses the lid sensor and does not use the camera.
 
 The build captures the Stockholm scene for the thumbnail in Mac settings.
-Mac settings shows a still preview. The full-screen screen saver animates the scene.
+Mac settings shows a still preview. The full-screen view uses the animated scene.
+The system full-screen screen saver still needs a real Mac test before release.
 Build the separate download from the repository root:
 
 ```bash

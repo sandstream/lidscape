@@ -37,6 +37,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
     }()
     private var webView: WKWebView?
     private var fallbackView: NSImageView?
+    private var fallbackTimer: Timer?
     private var bridge: Process?
     private var settingsSheet: NSWindow?
     private var viewChoice: NSPopUpButton?
@@ -129,6 +130,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
         super.init(frame: frame, isPreview: isPreview)
         wantsLayer = true
         layer?.backgroundColor = NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).cgColor
+        layer?.contents = thumbnail?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        layer?.contentsGravity = .resize
     }
 
     required init?(coder: NSCoder) {
@@ -137,18 +140,36 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
 
     private var showsThumbnail: Bool { isPreview || min(bounds.width, bounds.height) < 400 }
 
+    private var fillsScreen: Bool {
+        guard let screen = window?.screen else { return false }
+        return abs(bounds.width - screen.frame.width) < 2
+            && abs(bounds.height - screen.frame.height) < 2
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).setFill()
         dirtyRect.fill()
-        if showsThumbnail {
-            thumbnail?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
-        }
+        thumbnail?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
     }
 
     override func startAnimation() {
         super.startAnimation()
+        if fallbackTimer == nil {
+            let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.updateFallback() }
+            timer.tolerance = 0.05
+            RunLoop.main.add(timer, forMode: .common)
+            fallbackTimer = timer
+        }
         saverLog.debug("start preview=\(self.isPreview) size=\(self.bounds.width)x\(self.bounds.height) thumbnail=\(self.showsThumbnail) visible=\(self.window?.occlusionState.contains(.visible) == true)")
-        guard fallbackView == nil else { return }
+        guard fallbackView == nil else {
+            if let fallbackView {
+                fallbackView.removeFromSuperview()
+                addSubview(fallbackView, positioned: .above, relativeTo: webView)
+                fallbackView.needsDisplay = true
+            }
+            updateFallback()
+            return
+        }
         let fallback = NSImageView(frame: bounds)
         fallback.image = thumbnail
         fallback.imageScaling = .scaleAxesIndependently
@@ -197,14 +218,16 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
     }
 
     private func updateFallback() {
-        let shouldShow = showsThumbnail || window?.occlusionState.contains(.visible) != true
+        let shouldShow = showsThumbnail || !fillsScreen
         if fallbackView?.isHidden != !shouldShow {
-            saverLog.debug("fallback visible=\(shouldShow) windowVisible=\(self.window?.occlusionState.contains(.visible) == true)")
+            saverLog.debug("fallback visible=\(shouldShow) fillsScreen=\(self.fillsScreen)")
             fallbackView?.isHidden = !shouldShow
         }
     }
 
     override func stopAnimation() {
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
         fallbackView?.removeFromSuperview()
         fallbackView = nil
         webView?.evaluateJavaScript("window.lidscapeSaver?.stop()") { _, _ in }
