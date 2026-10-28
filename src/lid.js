@@ -2,7 +2,8 @@
 // Reconnects quietly; the page falls back to manual control while it is away.
 
 const URL = 'ws://127.0.0.1:8787'
-const CLOSED_DEG = 15
+// Finish the fold early, before the lid reaches the closed position.
+const CLOSED_DEG = 50
 const OPEN_DEG = 105
 const RETRY_MS = 3000
 

@@ -6,3 +6,45 @@ node_modules/
 !app/src-tauri/icons/*.png
 .playwright-mcp/
 .kit-triage.jsonl
+.claude/.kit-gates-installed
+# ── kit security check-gitignore ── do not edit ──
+!/.kit/
+# default dotenv file
+.env
+# local secrets materialized by kit secrets
+.env.local
+# per-env local secrets
+.env.*.local
+# dotenvx private keys (decrypt every encrypted .env)
+.env.keys
+# local secrets backups
+.env.local.*
+# per-env secrets backups
+.env.*.backup
+# production backups
+*.prod-backup
+# dependency tree
+node_modules
+# kit local state (elevation, env, runtime)
+.kit/*
+# keep curated shared memory tracked (committed by design)
+!.kit/shared/
+# audit log can contain secret labels + paths
+.kit-audit.jsonl
+# pending audit records
+.kit-audit.pending
+# local bypass records
+.kit-skipped-commits.jsonl
+# PEM keys / certs
+*.pem
+# private keys
+*.key
+# SSH private key
+id_rsa
+# SSH ed25519 private key
+id_ed25519
+# PKCS#12 bundle (TLS certs + keys)
+*.p12
+# GCP service-account JSON keys
+*-service-account*.json
+# ── /kit ──

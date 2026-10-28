@@ -1,0 +1,17 @@
+# Tauri 2.12.5 has no stable update that removes these transitive crates.
+# Recheck each exception before its expiry or before adding a Linux build.
+
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+ignoreUntil = 2027-01-27
+reason = "Only tauri-codegen uses block-buffer during the build. The shipped Mac app does not use this crate at runtime."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-01-27
+reason = "Only Linux GTK dependencies use glib 0.18.5. Lidscape ships as a macOS app. Recheck before a Linux build."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-01-27
+reason = "Only Linux GTK procedural macros use proc-macro-error. Lidscape ships as a macOS app. Recheck before a Linux build."
