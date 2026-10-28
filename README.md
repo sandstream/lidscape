@@ -26,6 +26,11 @@ IOKit exception, so the app ships outside the App Store.
 
 ### Screen saver
 
+These images show the packaged screen saver with the book open:
+
+![Stockholm screen saver](docs/screensaver-city.png)
+![World map screen saver](docs/screensaver-map.png)
+
 The screen saver is also a separate Mac download. It does not need Lidscape.app.
 On macOS 27 or later, unzip `Lidscape-Screen-Saver_<version>_arm64.zip` and
 double-click `Lidscape.saver`. Confirm installation for this user in macOS.
