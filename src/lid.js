@@ -10,12 +10,19 @@ const RETRY_MS = 3000
 export function connectLid(onChange) {
   const state = { connected: false, noSensor: false, angle: null, progress: null }
   let socket
+  let retry
+  let stopped = false
+
+  function reconnect() {
+    if (!stopped) retry = setTimeout(open, RETRY_MS)
+  }
 
   function open() {
+    if (stopped) return
     try {
       socket = new WebSocket(URL)
     } catch {
-      setTimeout(open, RETRY_MS)
+      reconnect()
       return
     }
     socket.onopen = () => {
@@ -47,10 +54,15 @@ export function connectLid(onChange) {
       state.connected = false
       state.progress = null
       if (was) onChange(state)
-      setTimeout(open, RETRY_MS)
+      reconnect()
     }
   }
 
   open()
+  state.disconnect = () => {
+    stopped = true
+    if (retry) clearTimeout(retry)
+    socket?.close?.()
+  }
   return state
 }

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lidscape Screen Saver</title>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0b1622; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #error:not([hidden]) { display: grid; }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <p id="error" role="alert" hidden style="position:fixed;inset:0;margin:0;place-items:center;background:#0b1622;color:#f4f2ec;font:16px system-ui;text-align:center;padding:2rem"></p>
+  <script>
+    const report = (message) => {
+      const error = document.getElementById('error')
+      error.textContent = message
+      error.hidden = false
+    }
+    addEventListener('error', (event) => report(event.message || 'The screen saver could not load.'))
+    addEventListener('unhandledrejection', (event) => report(String(event.reason)))
+  </script>
+  <script id="saver-main" src="./saver.js"></script>
+  <script>document.getElementById('saver-main').addEventListener('error', () => report('The screen saver module could not load.'))</script>
+</body>
+</html>

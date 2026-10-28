@@ -24,6 +24,15 @@ gets lower quality, and a Mac without a lid sensor or camera is told plainly.
 The lid sensor cannot be read inside the App Store sandbox without a temporary
 IOKit exception, so the app ships outside the App Store.
 
+### Screen saver
+
+On macOS 27 or later, open **Screen Saver** in the Lidscape app.
+Choose a city or the world map, then select **Install**.
+Confirm installation for this user in macOS.
+Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
+To remove it, select **Remove** in the Lidscape app.
+The screen saver uses the lid sensor and does not use the camera.
+
 ## Run in a browser
 
 ```bash
@@ -71,6 +80,7 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 | `src/tracking.js` | MediaPipe face (iris distance gives depth) and hand pose |
 | `src/lid.js` | WebSocket client for the lid bridge |
 | `bridge/LidBridge.swift` | Reads the lid sensor over IOKit HID and serves it on localhost |
+| `screensaver/` | Builds the offline Mac screen saver module |
 
 ## Add a city, a theme or a variant
 
