@@ -26,12 +26,26 @@ IOKit exception, so the app ships outside the App Store.
 
 ### Screen saver
 
-On macOS 27 or later, open **Screen Saver** in the Lidscape app.
-Choose a city or the world map, then select **Install**.
+The screen saver is also a separate Mac download. It does not need Lidscape.app.
+On macOS 27 or later, unzip `Lidscape-Screen-Saver_<version>_arm64.zip` and
+double-click `Lidscape.saver`. Confirm installation for this user in macOS.
+Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
+Use the screen saver's **Options** control to choose city, theme, variant and view.
+To remove it, delete `~/Library/Screen Savers/Lidscape.saver`.
+The screen saver uses the lid sensor and does not use the camera.
+
+Build the separate download with `sh screensaver/build-download.sh`.
+For a public release, set `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`,
+`APPLE_API_ISSUER` and `APPLE_API_KEY_PATH`, then add `--notarize`.
+The ZIP file appears in `dist/` and can be attached to a GitHub release.
+
+The Mac app offers the same screen saver through its settings:
+
+On macOS 27 or later, open **Screen Saver** in the Lidscape app and select **Install**.
 Confirm installation for this user in macOS.
 Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
+Choose the picture with **Options** in Mac settings.
 To remove it, select **Remove** in the Lidscape app.
-The screen saver uses the lid sensor and does not use the camera.
 
 ## Run in a browser
 

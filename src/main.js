@@ -319,7 +319,7 @@ for (const li of document.querySelectorAll('#hud-status li')) {
 
 watchUpdates({ t, hud })
 setupHowTo({ t, lang, theme, variant })
-setupScreenSaverSettings({ t, lang, cities: CITIES, themes: THEMES, variants: VARIANTS })
+setupScreenSaverSettings({ t })
 
 function setStatus(source, value) {
   document.querySelector(`[data-source="${source}"]`).dataset.state = value

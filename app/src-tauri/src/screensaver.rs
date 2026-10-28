@@ -1,61 +1,16 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
 const BUNDLE_ID: &str = "se.sandstream.lidscape.saver";
 const SAVER_NAME: &str = "Lidscape.saver";
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(default)]
-pub struct ScreenSaverSettings {
-    pub city: String,
-    pub theme: String,
-    pub variant: String,
-    pub view: String,
-}
-
-impl Default for ScreenSaverSettings {
-    fn default() -> Self {
-        Self {
-            city: "stockholm".into(),
-            theme: "paper".into(),
-            variant: String::new(),
-            view: "city".into(),
-        }
-    }
-}
-
-impl ScreenSaverSettings {
-    fn validate(&self) -> Result<(), String> {
-        for (name, value, empty) in [
-            ("city", self.city.as_str(), false),
-            ("theme", self.theme.as_str(), false),
-            ("variant", self.variant.as_str(), true),
-        ] {
-            if value.len() > 64
-                || (!empty && value.is_empty())
-                || !value
-                    .bytes()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-            {
-                return Err(format!("Invalid screen saver {name}"));
-            }
-        }
-        if self.view != "city" && self.view != "map" {
-            return Err("Invalid screen saver view".into());
-        }
-        Ok(())
-    }
-}
-
 #[derive(Serialize)]
 pub struct ScreenSaverStatus {
     pub installed: bool,
     pub available: bool,
-    pub settings: ScreenSaverSettings,
     #[serde(rename = "installationPending")]
     pub installation_pending: bool,
 }
@@ -63,7 +18,6 @@ pub struct ScreenSaverStatus {
 struct SaverPaths {
     source: PathBuf,
     installed: PathBuf,
-    settings: PathBuf,
 }
 
 impl SaverPaths {
@@ -82,7 +36,6 @@ impl SaverPaths {
         Ok(Self {
             source,
             installed: home.join("Library/Screen Savers").join(SAVER_NAME),
-            settings: home.join("Library/Application Support/Lidscape/screensaver.json"),
         })
     }
 }
@@ -120,52 +73,10 @@ fn macos_27_or_newer() -> bool {
         .is_some_and(|major| major >= 27)
 }
 
-fn read_settings(path: &Path) -> Result<ScreenSaverSettings, String> {
-    let data = match fs::read(path) {
-        Ok(data) => data,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(ScreenSaverSettings::default())
-        }
-        Err(err) => return Err(err.to_string()),
-    };
-    let settings: ScreenSaverSettings = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
-    settings.validate()?;
-    Ok(settings)
-}
-
-fn temporary_name(parent: &Path, purpose: &str) -> PathBuf {
-    let time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    parent.join(format!(
-        ".Lidscape.{}.{}.{}",
-        std::process::id(),
-        time,
-        purpose
-    ))
-}
-
-fn write_settings(path: &Path, settings: &ScreenSaverSettings) -> Result<(), String> {
-    settings.validate()?;
-    let parent = path
-        .parent()
-        .ok_or("Screen saver settings path is invalid")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let temporary = temporary_name(parent, "settings");
-    let data = serde_json::to_vec(settings).map_err(|e| e.to_string())?;
-    fs::write(&temporary, data).map_err(|e| e.to_string())?;
-    if let Err(err) = fs::rename(&temporary, path) {
-        let _ = fs::remove_file(&temporary);
-        return Err(err.to_string());
-    }
-    Ok(())
-}
-
 fn status(paths: &SaverPaths) -> Result<ScreenSaverStatus, String> {
     Ok(ScreenSaverStatus {
         installed: owned_bundle(&paths.installed),
         available: macos_27_or_newer() && owned_bundle(&paths.source),
-        settings: read_settings(&paths.settings)?,
         installation_pending: false,
     })
 }
@@ -173,16 +84,6 @@ fn status(paths: &SaverPaths) -> Result<ScreenSaverStatus, String> {
 #[tauri::command]
 pub fn screensaver_status(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
     status(&SaverPaths::for_app(&app)?)
-}
-
-#[tauri::command]
-pub fn save_screensaver_settings(
-    app: tauri::AppHandle,
-    settings: ScreenSaverSettings,
-) -> Result<ScreenSaverStatus, String> {
-    let paths = SaverPaths::for_app(&app)?;
-    write_settings(&paths.settings, &settings)?;
-    status(&paths)
 }
 
 fn request_install(paths: &SaverPaths) -> Result<(), String> {
@@ -245,36 +146,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validates_options_before_they_reach_the_screen_saver() {
-        let mut settings = ScreenSaverSettings::default();
-        assert!(settings.validate().is_ok());
-        settings.view = "map".into();
-        settings.variant = "christmas".into();
-        assert!(settings.validate().is_ok());
-        settings.city = "../other".into();
-        assert!(settings.validate().is_err());
-        settings.city = "stockholm".into();
-        settings.view = "camera".into();
-        assert!(settings.validate().is_err());
-    }
-
-    #[test]
-    fn saves_and_reads_options_with_defaults() {
-        let dir = std::env::temp_dir().join(format!("lidscape-saver-test-{}", std::process::id()));
-        let path = dir.join("screen saver.json");
-        let settings = ScreenSaverSettings {
-            city: "tallinn".into(),
-            view: "map".into(),
-            ..Default::default()
-        };
-        write_settings(&path, &settings).unwrap();
-        let result = read_settings(&path).unwrap();
-        assert_eq!(result.city, "tallinn");
-        assert_eq!(result.view, "map");
-        fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
     fn removes_only_its_own_bundle() {
         let dir = std::env::temp_dir().join(format!(
             "lidscape-saver-install-test-{}",
@@ -288,7 +159,6 @@ mod tests {
         let paths = SaverPaths {
             source,
             installed,
-            settings: dir.join("settings.json"),
         };
         fs::create_dir_all(paths.installed.join("Contents")).unwrap();
         fs::copy(&info, paths.installed.join("Contents/Info.plist")).unwrap();

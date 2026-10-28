@@ -1,19 +1,121 @@
 import AppKit
-import Darwin
 import ScreenSaver
 import WebKit
 
-private struct SaverSettings: Decodable {
+private struct SaverSettings: Codable {
     let city: String
     let theme: String
     let variant: String
     let view: String
 }
 
+private struct SaverOption: Decodable {
+    let id: String
+    let en: String
+    let sv: String
+
+    func name(swedish: Bool) -> String { swedish ? sv : en }
+}
+
+private struct SaverOptions: Decodable {
+    let cities: [SaverOption]
+    let themes: [SaverOption]
+    let variants: [SaverOption]
+}
+
+private let saverBundleID = "se.sandstream.lidscape.saver"
+
 @objc(LidscapeSaverView)
 final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
+    private lazy var saverDefaults = ScreenSaverDefaults(forModuleWithName: saverBundleID)
     private var webView: WKWebView?
     private var bridge: Process?
+    private var settingsSheet: NSWindow?
+    private var viewChoice: NSPopUpButton?
+    private var cityChoice: NSPopUpButton?
+    private var themeChoice: NSPopUpButton?
+    private var variantChoice: NSPopUpButton?
+    private var settingsError: NSTextField?
+    private var swedish: Bool { Locale.preferredLanguages.first?.hasPrefix("sv") == true }
+
+    override var hasConfigureSheet: Bool { true }
+
+    override var configureSheet: NSWindow? {
+        let options = loadOptions()
+        let current = loadSettings()
+        let sheet = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        sheet.title = swedish ? "Lidscape: skärmsläckare" : "Lidscape screen saver"
+        let content = NSView(frame: sheet.contentRect(forFrameRect: sheet.frame))
+        sheet.contentView = content
+
+        let view = choice([
+            SaverOption(id: "city", en: "City", sv: "Stad"),
+            SaverOption(id: "map", en: "World map", sv: "Världskarta"),
+        ], selected: current.view)
+        let city = choice(options.cities, selected: current.city)
+        let theme = choice(options.themes, selected: current.theme)
+        let variant = choice(
+            [SaverOption(id: "", en: "None", sv: "Ingen")] + options.variants,
+            selected: current.variant
+        )
+        view.target = self
+        view.action = #selector(viewChanged)
+        viewChoice = view
+        cityChoice = city
+        themeChoice = theme
+        variantChoice = variant
+
+        let rows: [(String, NSPopUpButton)] = [
+            (swedish ? "Bild" : "Picture", view),
+            (swedish ? "Stad" : "City", city),
+            (swedish ? "Tema" : "Theme", theme),
+            (swedish ? "Variant" : "Variant", variant),
+        ]
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(stack)
+        for (title, popup) in rows {
+            let label = NSTextField(labelWithString: title)
+            label.alignment = .right
+            label.widthAnchor.constraint(equalToConstant: 85).isActive = true
+            popup.widthAnchor.constraint(equalToConstant: 250).isActive = true
+            let row = NSStackView(views: [label, popup])
+            row.orientation = .horizontal
+            row.spacing = 12
+            stack.addArrangedSubview(row)
+        }
+        let error = NSTextField(labelWithString: "")
+        error.textColor = .systemRed
+        error.lineBreakMode = .byWordWrapping
+        error.maximumNumberOfLines = 2
+        stack.addArrangedSubview(error)
+        settingsError = error
+
+        let cancel = NSButton(title: swedish ? "Avbryt" : "Cancel", target: self, action: #selector(closeConfiguration))
+        cancel.keyEquivalent = "\u{1b}"
+        let save = NSButton(title: swedish ? "Spara" : "Save", target: self, action: #selector(saveConfiguration))
+        save.keyEquivalent = "\r"
+        let actions = NSStackView(views: [cancel, save])
+        actions.orientation = .horizontal
+        actions.spacing = 10
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(actions)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
+            stack.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            stack.widthAnchor.constraint(equalToConstant: 347),
+            actions.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -25),
+            actions.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -22),
+        ])
+        settingsSheet = sheet
+        viewChanged()
+        return sheet
+    }
 
     override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
@@ -71,11 +173,73 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
 
     private func loadSettings() -> SaverSettings {
         let fallback = SaverSettings(city: "stockholm", theme: "paper", variant: "", view: "city")
-        guard let entry = getpwuid(getuid()), let directory = entry.pointee.pw_dir else { return fallback }
-        let home = URL(fileURLWithPath: String(cString: directory), isDirectory: true)
-        let file = home.appendingPathComponent("Library/Application Support/Lidscape/screensaver.json")
-        guard let data = try? Data(contentsOf: file) else { return fallback }
-        return (try? JSONDecoder().decode(SaverSettings.self, from: data)) ?? fallback
+        if let saved = saverDefaults?.string(forKey: "settingsJSON"),
+           let data = saved.data(using: .utf8),
+           let settings = try? JSONDecoder().decode(SaverSettings.self, from: data) {
+            return settings
+        }
+        return fallback
+    }
+
+    private func loadOptions() -> SaverOptions {
+        let fallback = SaverOptions(
+            cities: [SaverOption(id: "stockholm", en: "Stockholm", sv: "Stockholm")],
+            themes: [SaverOption(id: "paper", en: "Paper", sv: "Papper")],
+            variants: []
+        )
+        guard let url = Bundle(for: Self.self).url(forResource: "options", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return fallback }
+        return (try? JSONDecoder().decode(SaverOptions.self, from: data)) ?? fallback
+    }
+
+    private func choice(_ options: [SaverOption], selected: String) -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        for (index, option) in options.enumerated() {
+            popup.addItem(withTitle: option.name(swedish: swedish))
+            popup.item(at: index)?.representedObject = option.id
+            if option.id == selected { popup.selectItem(at: index) }
+        }
+        return popup
+    }
+
+    private func selected(_ popup: NSPopUpButton?) -> String {
+        popup?.selectedItem?.representedObject as? String ?? ""
+    }
+
+    @objc private func viewChanged() {
+        let cityIsVisible = selected(viewChoice) == "city"
+        cityChoice?.isEnabled = cityIsVisible
+        variantChoice?.isEnabled = cityIsVisible
+    }
+
+    @objc private func closeConfiguration() {
+        guard let sheet = settingsSheet else { return }
+        sheet.sheetParent?.endSheet(sheet)
+        sheet.orderOut(nil)
+        settingsSheet = nil
+    }
+
+    @objc private func saveConfiguration() {
+        guard let defaults = saverDefaults else {
+            settingsError?.stringValue = swedish ? "Kan inte öppna skärmsläckarens inställningar." : "Cannot open screen saver settings."
+            return
+        }
+        let settings = SaverSettings(
+            city: selected(cityChoice), theme: selected(themeChoice),
+            variant: selected(variantChoice), view: selected(viewChoice)
+        )
+        do {
+            let data = try JSONEncoder().encode(settings)
+            guard let value = String(data: data, encoding: .utf8) else { return }
+            defaults.set(value, forKey: "settingsJSON")
+            guard defaults.synchronize() else {
+                settingsError?.stringValue = swedish ? "Inställningarna kunde inte sparas." : "The settings could not be saved."
+                return
+            }
+            closeConfiguration()
+        } catch {
+            settingsError?.stringValue = error.localizedDescription
+        }
     }
 
     private func startBridge(resources: URL) {

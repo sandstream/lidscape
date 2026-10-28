@@ -291,11 +291,6 @@ button[hidden] { display: none; }
 #saver-settings::backdrop { background: rgb(0 0 0 / 0.55); }
 #saver-settings h2 { margin: 0 0 8px; font: 400 26px/1.1 var(--display); }
 #saver-description { margin: 0 0 16px; color: var(--muted); }
-#saver-fields { display: grid; gap: 10px; }
-#saver-fields label { display: grid; gap: 4px; color: var(--muted); }
-#saver-fields select { width: 100%; color: var(--ink); }
-#saver-fields .saver-city-field[hidden] { display: none; }
 #saver-status { min-height: 20px; margin: 14px 0; color: var(--muted); }
 #saver-status[data-error="true"] { color: #ffb59c; }
 #saver-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-#saver-save { border-color: var(--accent); }

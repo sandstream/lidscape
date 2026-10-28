@@ -76,7 +76,6 @@ pub fn run() {
             check_update,
             open_link,
             screensaver::screensaver_status,
-            screensaver::save_screensaver_settings,
             screensaver::install_screensaver,
             screensaver::uninstall_screensaver,
             screensaver::open_screensaver_settings,
