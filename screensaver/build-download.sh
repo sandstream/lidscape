@@ -2,7 +2,7 @@
 # Build the screen saver as a separate download. Use --notarize for a public release.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SAVER="$ROOT/dist/Lidscape.saver"
+SAVER="$ROOT/dist/LidscapeScreenSaver.saver"
 VERSION=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' "$ROOT/app/src-tauri/tauri.conf.json" | head -1)
 ARCHIVE="$ROOT/dist/Lidscape-Screen-Saver_${VERSION}_arm64.zip"
 

@@ -52,7 +52,7 @@
       "files": {
         "Resources/en.lproj/InfoPlist.strings": "locales/en.lproj/InfoPlist.strings",
         "Resources/sv.lproj/InfoPlist.strings": "locales/sv.lproj/InfoPlist.strings",
-        "Resources/Lidscape.saver": "target/screensaver/Lidscape.saver"
+        "Resources/LidscapeScreenSaver.saver": "target/screensaver/LidscapeScreenSaver.saver"
       }
     }
   }

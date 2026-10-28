@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::Manager;
 
-const BUNDLE_ID: &str = "se.sandstream.lidscape.saver";
-const SAVER_NAME: &str = "Lidscape.saver";
+const BUNDLE_ID: &str = "se.sandstream.lidscape.screensaver";
+const LEGACY_BUNDLE_ID: &str = "se.sandstream.lidscape.saver";
+const SAVER_NAME: &str = "LidscapeScreenSaver.saver";
+const LEGACY_SAVER_NAME: &str = "Lidscape.saver";
 
 #[derive(Serialize)]
 pub struct ScreenSaverStatus {
@@ -18,6 +20,7 @@ pub struct ScreenSaverStatus {
 struct SaverPaths {
     source: PathBuf,
     installed: PathBuf,
+    legacy_installed: PathBuf,
 }
 
 impl SaverPaths {
@@ -36,6 +39,7 @@ impl SaverPaths {
         Ok(Self {
             source,
             installed: home.join("Library/Screen Savers").join(SAVER_NAME),
+            legacy_installed: home.join("Library/Screen Savers").join(LEGACY_SAVER_NAME),
         })
     }
 }
@@ -56,6 +60,10 @@ fn bundle_id(path: &Path) -> Option<String> {
 }
 
 fn owned_bundle(path: &Path) -> bool {
+    matches!(bundle_id(path).as_deref(), Some(BUNDLE_ID | LEGACY_BUNDLE_ID))
+}
+
+fn current_bundle(path: &Path) -> bool {
     bundle_id(path).as_deref() == Some(BUNDLE_ID)
 }
 
@@ -74,9 +82,12 @@ fn macos_27_or_newer() -> bool {
 }
 
 fn status(paths: &SaverPaths) -> Result<ScreenSaverStatus, String> {
+    if current_bundle(&paths.installed) && owned_bundle(&paths.legacy_installed) {
+        fs::remove_dir_all(&paths.legacy_installed).map_err(|e| e.to_string())?;
+    }
     Ok(ScreenSaverStatus {
-        installed: owned_bundle(&paths.installed),
-        available: macos_27_or_newer() && owned_bundle(&paths.source),
+        installed: current_bundle(&paths.installed),
+        available: macos_27_or_newer() && current_bundle(&paths.source),
         installation_pending: false,
     })
 }
@@ -87,11 +98,11 @@ pub fn screensaver_status(app: tauri::AppHandle) -> Result<ScreenSaverStatus, St
 }
 
 fn request_install(paths: &SaverPaths) -> Result<(), String> {
-    if !owned_bundle(&paths.source) {
+    if !current_bundle(&paths.source) {
         return Err("The Lidscape screen saver is missing from the app".into());
     }
     if paths.installed.exists() && !owned_bundle(&paths.installed) {
-        return Err("Another screen saver uses the Lidscape.saver location".into());
+        return Err("Another screen saver uses the LidscapeScreenSaver.saver location".into());
     }
     let opened = Command::new("open")
         .arg(&paths.source)
@@ -104,11 +115,15 @@ fn request_install(paths: &SaverPaths) -> Result<(), String> {
 }
 
 fn uninstall_bundle(paths: &SaverPaths) -> Result<(), String> {
-    if paths.installed.exists() {
-        if !owned_bundle(&paths.installed) {
+    for path in [&paths.installed, &paths.legacy_installed] {
+        if path.exists() && !owned_bundle(path) {
             return Err("The screen saver at this location does not belong to Lidscape".into());
         }
-        fs::remove_dir_all(&paths.installed).map_err(|e| e.to_string())?;
+    }
+    for path in [&paths.installed, &paths.legacy_installed] {
+        if path.exists() {
+            fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -152,17 +167,23 @@ mod tests {
             std::process::id()
         ));
         let source = dir.join("source.saver");
-        let installed = dir.join("Screen Savers/Lidscape.saver");
+        let installed = dir.join("Screen Savers/LidscapeScreenSaver.saver");
+        let legacy_installed = dir.join("Screen Savers/Lidscape.saver");
         let info = source.join("Contents/Info.plist");
         fs::create_dir_all(info.parent().unwrap()).unwrap();
         fs::write(&info, format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>{BUNDLE_ID}</string></dict></plist>")).unwrap();
         let paths = SaverPaths {
             source,
             installed,
+            legacy_installed,
         };
         fs::create_dir_all(paths.installed.join("Contents")).unwrap();
         fs::copy(&info, paths.installed.join("Contents/Info.plist")).unwrap();
         assert!(owned_bundle(&paths.installed));
+        fs::create_dir_all(paths.legacy_installed.join("Contents")).unwrap();
+        fs::write(paths.legacy_installed.join("Contents/Info.plist"), format!("<plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>{LEGACY_BUNDLE_ID}</string></dict></plist>")).unwrap();
+        assert!(status(&paths).unwrap().installed);
+        assert!(!paths.legacy_installed.exists());
         uninstall_bundle(&paths).unwrap();
         assert!(!paths.installed.exists());
 

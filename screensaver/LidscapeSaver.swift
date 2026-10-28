@@ -1,6 +1,7 @@
 import AppKit
 import ScreenSaver
 import WebKit
+import os
 
 private struct SaverSettings: Codable {
     let city: String
@@ -23,12 +24,19 @@ private struct SaverOptions: Decodable {
     let variants: [SaverOption]
 }
 
-private let saverBundleID = "se.sandstream.lidscape.saver"
+private let saverBundleID = "se.sandstream.lidscape.screensaver"
+private let oldSaverBundleID = "se.sandstream.lidscape.saver"
+private let saverLog = Logger(subsystem: saverBundleID, category: "screen-saver")
 
 @objc(LidscapeSaverView)
 final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
     private lazy var saverDefaults = ScreenSaverDefaults(forModuleWithName: saverBundleID)
+    private lazy var thumbnail: NSImage? = {
+        guard let url = Bundle(for: Self.self).url(forResource: "thumbnail", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }()
     private var webView: WKWebView?
+    private var fallbackView: NSImageView?
     private var bridge: Process?
     private var settingsSheet: NSWindow?
     private var viewChoice: NSPopUpButton?
@@ -127,9 +135,29 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
         super.init(coder: coder)
     }
 
+    private var showsThumbnail: Bool { isPreview || min(bounds.width, bounds.height) < 400 }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).setFill()
+        dirtyRect.fill()
+        if showsThumbnail {
+            thumbnail?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+        }
+    }
+
     override func startAnimation() {
         super.startAnimation()
-        guard webView == nil else { return }
+        saverLog.debug("start preview=\(self.isPreview) size=\(self.bounds.width)x\(self.bounds.height) thumbnail=\(self.showsThumbnail) visible=\(self.window?.occlusionState.contains(.visible) == true)")
+        guard fallbackView == nil else { return }
+        let fallback = NSImageView(frame: bounds)
+        fallback.image = thumbnail
+        fallback.imageScaling = .scaleAxesIndependently
+        fallback.autoresizingMask = [.width, .height]
+        addSubview(fallback)
+        fallbackView = fallback
+        if showsThumbnail {
+            return
+        }
         let bundle = Bundle(for: Self.self)
         guard let resources = bundle.resourceURL,
               let page = bundle.url(forResource: "index", withExtension: "html", subdirectory: "web") else {
@@ -157,11 +185,28 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
         view.underPageBackgroundColor = NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1)
         addSubview(view)
         webView = view
+        addSubview(fallback, positioned: .above, relativeTo: view)
+        updateFallback()
         view.loadFileURL(page, allowingReadAccessTo: resources)
         if !isPreview { startBridge(resources: resources) }
     }
 
+    override func animateOneFrame() {
+        super.animateOneFrame()
+        updateFallback()
+    }
+
+    private func updateFallback() {
+        let shouldShow = showsThumbnail || window?.occlusionState.contains(.visible) != true
+        if fallbackView?.isHidden != !shouldShow {
+            saverLog.debug("fallback visible=\(shouldShow) windowVisible=\(self.window?.occlusionState.contains(.visible) == true)")
+            fallbackView?.isHidden = !shouldShow
+        }
+    }
+
     override func stopAnimation() {
+        fallbackView?.removeFromSuperview()
+        fallbackView = nil
         webView?.evaluateJavaScript("window.lidscapeSaver?.stop()") { _, _ in }
         webView?.stopLoading()
         webView?.removeFromSuperview()
@@ -173,7 +218,9 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
 
     private func loadSettings() -> SaverSettings {
         let fallback = SaverSettings(city: "stockholm", theme: "paper", variant: "", view: "city")
-        if let saved = saverDefaults?.string(forKey: "settingsJSON"),
+        let saved = saverDefaults?.string(forKey: "settingsJSON")
+            ?? ScreenSaverDefaults(forModuleWithName: oldSaverBundleID)?.string(forKey: "settingsJSON")
+        if let saved,
            let data = saved.data(using: .utf8),
            let settings = try? JSONDecoder().decode(SaverSettings.self, from: data) {
             return settings

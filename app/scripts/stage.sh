@@ -12,4 +12,4 @@ find web/src -type f \( -name '*.test.js' -o -name '*.test-support.js' \) -delet
 mkdir -p src-tauri/binaries
 swiftc -O "$ROOT/bridge/LidBridge.swift" -o src-tauri/binaries/lid-bridge-aarch64-apple-darwin
 sh "$ROOT/screensaver/build.sh"
-echo "Staged web/, binaries/lid-bridge, and Lidscape.saver"
+echo "Staged web/, binaries/lid-bridge, and LidscapeScreenSaver.saver"

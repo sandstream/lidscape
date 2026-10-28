@@ -4,8 +4,8 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 case "${1:-app}" in
-  app) OUT="$ROOT/app/src-tauri/target/screensaver/Lidscape.saver" ;;
-  standalone) OUT="$ROOT/dist/Lidscape.saver" ;;
+  app) OUT="$ROOT/app/src-tauri/target/screensaver/LidscapeScreenSaver.saver" ;;
+  standalone) OUT="$ROOT/dist/LidscapeScreenSaver.saver" ;;
   *) echo 'Use: build.sh [app|standalone]' >&2; exit 2 ;;
 esac
 CONTENTS="$OUT/Contents"
@@ -16,6 +16,8 @@ mkdir -p "$CONTENTS/MacOS" "$WEB"
 cp "$ROOT/screensaver/Info.plist" "$CONTENTS/Info.plist"
 VERSION=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' "$ROOT/app/src-tauri/tauri.conf.json" | head -1)
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$CONTENTS/Info.plist"
+BUNDLE_VERSION=$(printf '%s' "$VERSION" | awk -F. '{ print $1 * 1000000 + $2 * 10000 + $3 * 100 + 1 }')
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUNDLE_VERSION" "$CONTENTS/Info.plist"
 cp "$ROOT/screensaver/index.html" "$WEB/index.html"
 bun build --target=browser --format=iife --outfile="$WEB/saver.js" "$ROOT/src/saver-main.js"
 node "$ROOT/screensaver/generate-thumbnail.mjs" "$WEB/index.html" "$CONTENTS/Resources"

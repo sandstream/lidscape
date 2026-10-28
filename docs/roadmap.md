@@ -20,7 +20,7 @@ See [the world map design](superpowers/specs/2026-10-27-world-map-design.md).
 
 - Package a local `.saver` module with the Mac app. macOS uses the Screen Saver framework for third-party screen savers.
 - Bundle the picture code for offline use. The website still loads its modules without a build step.
-- Generate the Mac settings thumbnail from the default Stockholm scene during the screen saver build. A new module identity showed it in macOS; this Mac still caches the old Lidscape thumbnail.
+- Generate the Mac settings thumbnail from the default Stockholm scene during the screen saver build. macOS showed the new thumbnail after the module moved to `LidscapeScreenSaver.saver`.
 - Save the screen saver's city, theme, variant and view in macOS Options. The same controls work with and without the app.
 - Theme and variant effect sliders use their defaults. Add screen saver controls for those values later.
 - Use the lid as the only active input. Keep the camera, pointer, gestures and menus out of the screen saver.

@@ -33,13 +33,14 @@ These images show the packaged screen saver with the book open:
 
 The screen saver is also a separate Mac download. It does not need Lidscape.app.
 On macOS 27 or later, unzip `Lidscape-Screen-Saver_<version>_arm64.zip` and
-double-click `Lidscape.saver`. Confirm installation for this user in macOS.
+double-click `LidscapeScreenSaver.saver`. Confirm installation for this user in macOS.
 Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
 Use the screen saver's **Options** control to choose city, theme, variant and view.
-To remove it, delete `~/Library/Screen Savers/Lidscape.saver`.
+To remove it, delete `~/Library/Screen Savers/LidscapeScreenSaver.saver`.
 The screen saver uses the lid sensor and does not use the camera.
 
 The build captures the Stockholm scene for the thumbnail in Mac settings.
+Mac settings shows a still preview. The full-screen screen saver animates the scene.
 Build the separate download from the repository root:
 
 ```bash

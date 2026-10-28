@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>LidscapeSaver</string>
-  <key>CFBundleIdentifier</key><string>se.sandstream.lidscape.saver</string>
+  <key>CFBundleIdentifier</key><string>se.sandstream.lidscape.screensaver</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Lidscape</string>
   <key>CFBundlePackageType</key><string>BNDL</string>
@@ -11,5 +11,6 @@
   <key>LSMinimumSystemVersion</key><string>27.0</string>
   <key>NSPrincipalClass</key><string>LidscapeSaverView</string>
   <key>ScreenSaverThumbnail</key><string>thumbnail</string>
+  <key>CFBundleIconFile</key><string>thumbnail</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
