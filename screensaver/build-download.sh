@@ -30,6 +30,18 @@ if [ "${1:-}" = '--notarize' ]; then
 fi
 
 rm -f "$ARCHIVE"
-/usr/bin/ditto -c -k --keepParent "$SAVER" "$ARCHIVE"
+/usr/bin/ditto -c -k --norsrc --noextattr --noqtn --noacl --keepParent "$SAVER" "$ARCHIVE"
 unzip -tq "$ARCHIVE"
+if unzip -Z1 "$ARCHIVE" | grep -Eq '(^__MACOSX/|/\._)'; then
+  echo 'The archive contains AppleDouble metadata files.' >&2
+  exit 1
+fi
+VERIFY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lidscape-saver-verify.XXXXXX")
+trap 'rm -r "$VERIFY_DIR"' EXIT
+unzip -q "$ARCHIVE" -d "$VERIFY_DIR"
+codesign --verify --deep --strict "$VERIFY_DIR/LidscapeScreenSaver.saver"
+if [ "${1:-}" = '--notarize' ]; then
+  xcrun stapler validate "$VERIFY_DIR/LidscapeScreenSaver.saver"
+  spctl -a -t install "$VERIFY_DIR/LidscapeScreenSaver.saver"
+fi
 echo "Built $ARCHIVE"

@@ -89,6 +89,7 @@ const clock = new THREE.Clock()
 let progress = 1
 let running = true
 let previousFrame = 0
+let previousFrameSignal = -Infinity
 
 function frame(now) {
   if (!running) return
@@ -104,6 +105,11 @@ function frame(now) {
     if (!lowQuality) city.renderReflection(renderer, camera)
   }
   composer.render()
+  window.lidscapeSaverLastRender = Date.now()
+  if (now - previousFrameSignal >= 250) {
+    previousFrameSignal = now
+    window.webkit?.messageHandlers?.lidscapeFrame?.postMessage(1)
+  }
 }
 
 window.lidscapeSaver = {

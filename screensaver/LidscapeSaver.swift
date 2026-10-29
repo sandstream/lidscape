@@ -28,8 +28,20 @@ private let saverBundleID = "se.sandstream.lidscape.screensaver"
 private let oldSaverBundleID = "se.sandstream.lidscape.saver"
 private let saverLog = Logger(subsystem: saverBundleID, category: "screen-saver")
 
+private final class WeakFrameHandler: NSObject, WKScriptMessageHandler {
+    weak var receiver: WKScriptMessageHandler?
+
+    init(receiver: WKScriptMessageHandler) {
+        self.receiver = receiver
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        receiver?.userContentController(userContentController, didReceive: message)
+    }
+}
+
 @objc(LidscapeSaverView)
-final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
+final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMessageHandler {
     private lazy var saverDefaults = ScreenSaverDefaults(forModuleWithName: saverBundleID)
     private lazy var thumbnail: NSImage? = {
         guard let url = Bundle(for: Self.self).url(forResource: "thumbnail", withExtension: "png") else { return nil }
@@ -38,6 +50,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
     private var webView: WKWebView?
     private var fallbackView: NSImageView?
     private var fallbackTimer: Timer?
+    private var lastRenderSeen: Date?
+    private var renderStartedAt: Date?
     private var bridge: Process?
     private var settingsSheet: NSWindow?
     private var viewChoice: NSPopUpButton?
@@ -140,12 +154,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
 
     private var showsThumbnail: Bool { isPreview || min(bounds.width, bounds.height) < 400 }
 
-    private var fillsScreen: Bool {
-        guard let screen = window?.screen else { return false }
-        return abs(bounds.width - screen.frame.width) < 2
-            && abs(bounds.height - screen.frame.height) < 2
-    }
-
     override func draw(_ dirtyRect: NSRect) {
         NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).setFill()
         dirtyRect.fill()
@@ -160,7 +168,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
             RunLoop.main.add(timer, forMode: .common)
             fallbackTimer = timer
         }
-        saverLog.debug("start preview=\(self.isPreview) size=\(self.bounds.width)x\(self.bounds.height) thumbnail=\(self.showsThumbnail) visible=\(self.window?.occlusionState.contains(.visible) == true)")
+        saverLog.debug("start preview=\(self.isPreview) size=\(self.bounds.width)x\(self.bounds.height)")
         guard fallbackView == nil else {
             if let fallbackView {
                 fallbackView.removeFromSuperview()
@@ -187,6 +195,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
         }
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.add(WeakFrameHandler(receiver: self), name: "lidscapeFrame")
         let settings = loadSettings()
         let options: [String: String] = [
             "city": settings.city,
@@ -217,10 +226,23 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
         updateFallback()
     }
 
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "lidscapeFrame", let webView, message.webView === webView else { return }
+        let now = Date()
+        if lastRenderSeen.map({ now.timeIntervalSince($0) < 0.75 }) != true {
+            renderStartedAt = now
+        }
+        lastRenderSeen = now
+        updateFallback()
+    }
+
     private func updateFallback() {
-        let shouldShow = showsThumbnail || !fillsScreen
+        let now = Date()
+        let isLive = lastRenderSeen.map { now.timeIntervalSince($0) < 0.75 } == true
+            && renderStartedAt.map { now.timeIntervalSince($0) >= 1 } == true
+        let shouldShow = showsThumbnail || !isLive
         if fallbackView?.isHidden != !shouldShow {
-            saverLog.debug("fallback visible=\(shouldShow) fillsScreen=\(self.fillsScreen)")
+            saverLog.debug("fallback visible=\(shouldShow)")
             fallbackView?.isHidden = !shouldShow
         }
     }
@@ -228,9 +250,12 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate {
     override func stopAnimation() {
         fallbackTimer?.invalidate()
         fallbackTimer = nil
+        lastRenderSeen = nil
+        renderStartedAt = nil
         fallbackView?.removeFromSuperview()
         fallbackView = nil
         webView?.evaluateJavaScript("window.lidscapeSaver?.stop()") { _, _ in }
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "lidscapeFrame")
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
