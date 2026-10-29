@@ -19,6 +19,7 @@ Research date: 29 October 2026. The Mac in the test runs macOS 27.
 - At 12:22:58, the system logged `PMNoDisplaySleepEnabled so do not launch screen saver`. The power assertion named `Microsoft Teams Call in progress` blocked idle display sleep. This is what Teams reported; it does not establish the state of a meeting.
 - The screen was unlocked at 12:23:17. At the earlier check, the system reported 44.7 seconds of user inactivity. The log does not establish a full minute of uninterrupted idle time before that check.
 - The earlier `ScreenSaverEngine` test started Lidscape manually from the unlocked desktop. The system received rendered frames and lid angles there. That test did not establish what a person would see on the locked screen.
+- A later test started Lidscape and then used Control-Command-Q. The key press stopped the screen saver, and Peter saw Golden Gate on the Lock Screen. The system reported that the screen saver was no longer running when the manual lock request arrived.
 - The Mac's profile sets the password requirement to five seconds after the screen saver starts. This is a delay, not immediate locking.
 
 These observations show that macOS did not start the screen saver during that locked interval. They do not prove that Lidscape cannot display or respond to the lid after the system starts it on a locked Mac.
@@ -30,4 +31,4 @@ These observations show that macOS did not start the screen saver during that lo
 3. After the five-second password delay, verify that authentication is required. Move the lid while the saver is visible and record whether the book follows it.
 4. Test an Apple-menu lock separately from the hot corner. Record whether the Lock Screen shows Lidscape or the desktop picture immediately, and whether it changes later.
 
-The hot-corner test starts a screen saver first. It does not by itself satisfy a requirement for immediate password protection or for the usual manual lock command to display Lidscape.
+The hot-corner test starts a screen saver first. It does not by itself satisfy a requirement for immediate password protection or for the usual manual lock command to display Lidscape. Starting the saver before Control-Command-Q did not meet the latter requirement in the test above.
