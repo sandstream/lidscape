@@ -44,10 +44,7 @@ private final class WeakFrameHandler: NSObject, WKScriptMessageHandler {
 @objc(LidscapeSaverView)
 final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMessageHandler {
     private lazy var saverDefaults = ScreenSaverDefaults(forModuleWithName: saverBundleID)
-    private lazy var poster: NSImage? = {
-        guard let url = Bundle(for: Self.self).url(forResource: "poster", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }()
+    private var poster: NSImage?
     private var webView: WKWebView?
     private var fallbackView: NSImageView?
     private var fallbackTimer: Timer?
@@ -56,6 +53,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     private var sensorSession: URLSession?
     private var sensorTask: URLSessionWebSocketTask?
     private var sensorHeartbeatTimer: Timer?
+    private var sensorRetryDelay = 0.25
     private var sensorActive = false
     private var sensorHelperURL: URL?
     private var lastLidAngle: Int?
@@ -150,8 +148,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         super.init(frame: frame, isPreview: isPreview)
         wantsLayer = true
         layer?.backgroundColor = NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).cgColor
-        layer?.contents = poster?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         layer?.contentsGravity = .resize
+        refreshPoster()
     }
 
     required init?(coder: NSCoder) {
@@ -168,6 +166,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
 
     override func startAnimation() {
         super.startAnimation()
+        refreshPoster()
         if fallbackTimer == nil {
             let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.updateFallback() }
             timer.tolerance = 0.05
@@ -353,14 +352,38 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
                 settingsError?.stringValue = swedish ? "Inställningarna kunde inte sparas." : "The settings could not be saved."
                 return
             }
+            refreshPoster()
             closeConfiguration()
         } catch {
             settingsError?.stringValue = error.localizedDescription
         }
     }
 
+    private func refreshPoster() {
+        let settings = loadSettings()
+        let options = loadOptions()
+        let themeIsValid = options.themes.contains { $0.id == settings.theme }
+        let cityIsValid = options.cities.contains { $0.id == settings.city }
+        let variantIsValid = settings.variant.isEmpty || options.variants.contains { $0.id == settings.variant }
+        var name = "poster"
+        if themeIsValid && settings.view == "map" {
+            name = "poster-map-\(settings.theme)"
+        } else if themeIsValid && cityIsValid && variantIsValid && settings.view == "city" {
+            let variant = settings.variant.isEmpty ? "none" : settings.variant
+            name = "poster-city-\(settings.city)-\(settings.theme)-\(variant)"
+        }
+        let bundle = Bundle(for: Self.self)
+        let url = bundle.url(forResource: name, withExtension: "png")
+            ?? bundle.url(forResource: "poster", withExtension: "png")
+        poster = url.flatMap { NSImage(contentsOf: $0) }
+        layer?.contents = poster?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        fallbackView?.image = poster
+        needsDisplay = true
+    }
+
     private func startSensor(resources: URL) {
         sensorActive = true
+        sensorRetryDelay = 0.25
         sensorHelperURL = resources.appendingPathComponent("Lidscape Sensor.app")
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             self?.sensorTask?.send(.string("keepalive")) { _ in }
@@ -411,7 +434,9 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
                     self.sensorSession?.invalidateAndCancel()
                     self.sensorSession = nil
                     self.requestSensorLaunch()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.connectSensor() }
+                    let delay = self.sensorRetryDelay
+                    self.sensorRetryDelay = min(delay * 2, 3)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.connectSensor() }
                 @unknown default:
                     self.receiveSensor(task)
                 }
@@ -425,6 +450,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
               let angle = message["angle"] as? Int, (0...180).contains(angle) else { return }
         if lastLidAngle == nil { saverLog.notice("lid sensor connected") }
         sensorLaunchRequested = false
+        sensorRetryDelay = 0.25
         lastLidAngle = angle
         sendLidAngle(angle)
     }
