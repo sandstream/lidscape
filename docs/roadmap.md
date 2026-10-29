@@ -6,7 +6,7 @@
 | --- | --- |
 | World map, zoom, city selection and separate menus | Built and checked in the browser and Mac app. |
 | Map fold from the lid | Built. Peter confirmed the fold direction on a real MacBook. |
-| Mac screen saver | Partial. The Mac app installs it. A separate ZIP is signed and notarized. System full-screen and wake tests remain before publication. |
+| Mac screen saver | Partial. The notarized ZIP is installed. The current build passed the macOS settings preview and a separate full-screen host. System full-screen and wake tests remain before publication. |
 | iPhone motion screen saver | Planned. The paper scene responds to phone tilt in a full-screen app. |
 | iPhone Lock Screen image | Planned. Export a still image or short Live Photo from Lidscape. |
 | Desktop wallpaper | Planned. |
@@ -26,7 +26,7 @@ See [the world map design](superpowers/specs/2026-10-27-world-map-design.md).
 - Use the lid as the only active input. Keep the camera, pointer, gestures and menus out of the screen saver.
 - Let the app install and remove its own screen saver module. Select the active screen saver in macOS settings.
 - Publish the signed, notarized `.saver` as a separate ZIP download. The ZIP is built locally. Its macOS Options sheet provides settings without the app.
-- The city and map passed the macOS settings preview on macOS 27. Stockholm stayed visible after the Options sheet closed. The native image returns when WebKit stops rendering. A separate full-screen host rendered the animated city.
+- The city and map passed earlier macOS settings preview checks on macOS 27. The current notarized build showed Stockholm before and after the Options sheet closed. The native image returns when WebKit stops rendering. A separate full-screen host showed the animated city with live render signals.
 - Test full-screen display, multiple screens and wake-up on a real Mac. Apple reports [legacy screen saver faults](https://developer.apple.com/forums/thread/787444) on secondary displays.
 - The [Mac Lock Screen](https://support.apple.com/en-ie/guide/mac-help/mchl8e8b6a34/27/mac/27) shows the selected screen saver after inactivity. Verify Lidscape there during the full-screen test.
 
