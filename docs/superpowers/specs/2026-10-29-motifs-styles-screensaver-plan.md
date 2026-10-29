@@ -141,9 +141,18 @@ The screen saver shows the same motifs, styles and occasions as the app.
   1. System Settings > Screen Saver > Options. This is the screen saver's own
      sheet (`configureSheet` in `ScreenSaverView`). It works without the app.
   2. Lidscape > Settings… > Screen Saver in the app.
-- The Options sheet has: category, motif, style, occasion, and a Shuffle
-  switch. Shuffle changes the motif every 10 minutes, among motifs the viewer
-  has ticked. It has a Done button, as the sheet guidelines ask.
+- The screen saver shows motifs only. The world map stays in the app and
+  leaves the screen saver. Remove the map view from the screen saver's
+  options and code.
+- The Options sheet and the app's Screen Saver pane show the same controls:
+  - A motif list with a search field above it. The list grows with every
+    city, so the viewer finds a motif by typing part of its name, in Swedish
+    or English. Categories are section headers in the list.
+  - Style and occasion as pop-up buttons.
+  - A Shuffle switch. With Shuffle on, the viewer ticks several motifs in the
+    list, and the screen saver changes motif every 10 minutes. With Shuffle
+    off, the list selects one motif.
+  - A Done button, as the sheet guidelines ask.
 - The lid is the only input. No camera, pointer or gestures.
 - Codex chooses where the shared settings are stored. The screen saver runs
   in the sandboxed `legacyScreenSaver` host, so the app must write where that
@@ -173,7 +182,7 @@ Tokyo.
 | 6 | Claude, then Codex | The red sports car: research and spec, then build. | Rights check passes. Fold works on a real lid. |
 | 7 | Codex | Bricks style, then Van Gogh. | As phase 5. |
 | 8 | Claude, then Codex | City drafts, then cities, in queue order. | `check-cities` OK. Every landmark free against the sky. |
-| 9 | Codex | Screen saver Options with motif, style, occasion and Shuffle. | Change in Options, see it in the real screen saver. Same for the app. |
+| 9 | Codex | Screen saver Options: searchable motif list, style, occasion and Shuffle. No world map. | Search finds a city by part of its name in both languages. Change in Options, see it in the real screen saver. Same for the app. |
 | 10 | Claude, then Codex | The teddy bear. | As phase 6. |
 | 11 | Codex | Your own motif from an SVG file. | Three test logos fold correctly. A file with a script is read without running it. |
 
