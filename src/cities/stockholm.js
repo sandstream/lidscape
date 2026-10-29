@@ -1,9 +1,8 @@
 // Stockholm seen from Skeppsholmen across Strömmen, looking west at Gamla stan.
 // Left (south): Södermalm's heights with Katarina kyrka. Middle: Tyska kyrkan,
 // Storkyrkan and Riddarholmskyrkan's iron spire. Right (north): Kungliga slottet
-// on the water, with Stadshuset's tower behind it, then Kaknästornet and the NK
-// sign. Skeppsbron quay up front,
-// with a Djurgården tram rolling in.
+// on the water, with Stadshuset's tower behind it, then Kaknästornet. Skeppsbron
+// quay up front, with a Djurgården tram rolling in.
 // Units are centimetres behind the screen. x = 0 is the screen centre.
 // Landmark sources: docs/cities/stockholm.md
 
@@ -435,65 +434,6 @@ function kaknastornet(x) {
   ]
 }
 
-// NK-klockan (1939; on NK's roof since 1953): a 7 m rotating disc on a 25 m mast
-// over the department store on Hamngatan. One face shows the NK logo in green, the
-// other a clock in red. Here the logo faces us, its letters cut through the disc.
-function nkKlockan(x) {
-  const roof = 6.4
-  const mastTop = roof + 4.4
-  const r = 1.8
-  const cy = mastTop + r
-  const at = (pts) => pts.map(([px, py]) => [px, cy + py])
-  const n = at([
-    [-1.05, -0.7],
-    [-0.83, -0.7],
-    [-0.83, 0.25],
-    [-0.37, -0.7],
-    [-0.15, -0.7],
-    [-0.15, 0.7],
-    [-0.37, 0.7],
-    [-0.37, -0.25],
-    [-0.83, 0.7],
-    [-1.05, 0.7],
-  ])
-  const k = at([
-    [0.15, -0.7],
-    [0.37, -0.7],
-    [0.37, -0.1],
-    [0.75, -0.7],
-    [1.02, -0.7],
-    [0.55, 0.05],
-    [1, 0.7],
-    [0.73, 0.7],
-    [0.37, 0.15],
-    [0.37, 0.7],
-    [0.15, 0.7],
-  ])
-  return [
-    // Boberg's department store block, under the mast
-    {
-      type: 'outline',
-      x,
-      tint: '#c9b79a',
-      points: mirrored([
-        [4, 0],
-        [4, roof - 0.6],
-        [3.6, roof],
-        [0, roof],
-      ]),
-      grids: [{ x: 0, w: 7.2, y0: 1.2, y1: roof - 0.8, opts: { ww: 0.36, wh: 0.7, gapX: 0.75, gapY: 1.4, skip: 0.1 } }],
-    },
-    // The mast and the green disc
-    {
-      type: 'outline',
-      x,
-      tint: '#3f8a5c',
-      points: [[0.18, roof - 0.1], ...arc(0, cy, r, -Math.PI / 2 + 0.1, Math.PI * 1.5 - 0.1, 48), [-0.18, roof - 0.1]],
-      holes: [n, k],
-    },
-  ]
-}
-
 // Hover labels: name and one line of facts, from docs/cities/stockholm.md.
 const LABELS = {
   stadshuset: { name: { sv: 'Stadshuset', en: 'City Hall' }, note: { sv: '1923 · tornet 106 m', en: '1923 · tower 106 m' } },
@@ -504,7 +444,6 @@ const LABELS = {
   katarina: { name: { sv: 'Katarina kyrka', en: 'Katarina Church' }, note: '1695 · 72 m' },
   globen: { name: 'Globen', note: 'Avicii Arena · 1989 · 85 m' },
   kaknas: { name: 'Kaknästornet', note: { sv: '1967 · 155 m, 170 m med masten', en: '1967 · 155 m, 170 m with the mast' } },
-  nk: { name: 'NK-klockan', note: { sv: 'På NK:s tak sedan 1953 · skivan 7 m', en: 'On NK\'s roof since 1953 · 7 m disc' } },
 }
 const labelled = (label, items) => [items].flat().map((item) => ({ ...item, label }))
 
@@ -537,9 +476,9 @@ export const stockholm = {
     },
     {
       // Kaknästornet on Gärdet, north-east behind the viewer. Drawn Stockholm
-      // skylines put it in anyway, so it stands between Stadshuset and NK here.
+      // skylines put it in anyway, so it stands north of Stadshuset here.
       z: -72,
-      items: labelled(LABELS.kaknas, kaknastornet(28.6)),
+      items: labelled(LABELS.kaknas, kaknastornet(30)),
     },
     {
       // Södermalm's heights to the south, low Kungsholmen to the north
@@ -556,11 +495,6 @@ export const stockholm = {
       // Riddarholmen and Stadshuset across Riddarfjärden
       z: -53,
       items: [...labelled(LABELS.riddarholmskyrkan, riddarholmskyrkan(-3)), ...labelled(LABELS.stadshuset, stadshuset(20.5))],
-    },
-    {
-      // NK's roof sign on Hamngatan, north of the palace across Strömmen
-      z: -47,
-      items: labelled(LABELS.nk, nkKlockan(25.8)),
     },
     {
       // Church towers over the dark band of Gamla stan's roofs

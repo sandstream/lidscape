@@ -10,7 +10,7 @@ Skeppsholmen's west shore (by the bridge to Blasieholmen), looking west across S
 
 - Left (south): the heights of Södermalm, with Katarina kyrka's dome on the ridge.
 - Middle: Gamla stan's roofs, with Tyska kyrkan's spire left of Storkyrkan's tower. Riddarholmskyrkan's iron spire rises behind them.
-- Right (north): Kungliga slottet sits on the water. Stadshuset's tower stands behind it, across Riddarfjärden. Further right, north-west across Strömmen, the NK sign turns on its mast over Hamngatan.
+- Right (north): Kungliga slottet sits on the water. Stadshuset's tower stands behind it, across Riddarfjärden.
 - Foreground: open water of Strömmen, then the Skeppsbron quay.
 
 This matches the layout in `src/cities/stockholm.js`.
@@ -69,16 +69,9 @@ This matches the layout in `src/cities/stockholm.js`.
 ### Kaknästornet
 - Height: 155 m; about 170 m with the mast. 34 floors.
 - Year: built from 1963, inaugurated 12 May 1967. Architects Hans Borgström and Bengt Lindroos.
-- Position: right, far. It stands on Gärdet, north-east of Skeppsholmen, so from this viewpoint it is behind the viewer. The scene puts it between Stadshuset and the NK sign, as drawn Stockholm skylines include it.
+- Position: right, far. It stands on Gärdet, north-east of Skeppsholmen, so from this viewpoint it is behind the viewer. The scene puts it north of Stadshuset, as drawn Stockholm skylines include it.
 - Silhouette: tall square concrete shaft, width ≈ 1/12 of the height to the roof; the head with the restaurant, café and antenna platforms is turned 45 degrees to the shaft, so it reads wider; lattice mast on the roof.
 - Local cue: the pale needle with the thick head, the tallest thing on the skyline.
-
-### NK-klockan (the NK sign)
-- Size: the rotating disc is 7 m across and weighs 7 tonnes. It stands on a mast of about 25 m with a spiral stair (Hans Asplund) on the roof of NK, Hamngatan 18–20.
-- Year: built 1939 and first lit 2 October 1939 on Telefontornet. On NK's roof since December 1953. Neon replaced with LED in 2012. The store building is from 1915 (Ferdinand Boberg).
-- Position: right, mid-distance, north-west across Strömmen behind Kungsträdgården.
-- Silhouette: low department store block; thin mast; round disc. It turns once every 15 seconds: one face shows the green NK logo (David Blomberg, 1902), the other a red clock.
-- Local cue: the NK letters on the disc. The scene shows the logo side, letters cut through a green disc.
 
 ## Traits
 
@@ -121,7 +114,5 @@ Gamla stan: narrow 17th and 18th century merchant houses, tall and thin. Roofs a
 - Katarina kyrka, 72 m, 1695, 1723, 1990, 1995, four corner towers: https://sv.wikipedia.org/wiki/Katarina_kyrka
 - Globen (Avicii Arena): https://sv.wikipedia.org/wiki/Avicii_Arena
 - Kaknästornet, 155 m, 170 m with mast, 1963, 12 May 1967, turned head, location: https://sv.wikipedia.org/wiki/Kaknästornet
-- NK-klockan, 1939, 1953, 7 m disc, 25 m mast, 15 s turn, green logo and red clock, LED 2012: https://sv.wikipedia.org/wiki/NK-klockan
-- NK, Hamngatan building 1912-1915, logo 1902: https://sv.wikipedia.org/wiki/Nordiska_Kompaniet
 - Ice, Riddarfjärden frozen 2023/24: https://kth.se/blogs/studentblog/2024/01/stockholm-is-frozen
 - Ice floes in central Stockholm: https://www.svt.se/nyheter/lokalt/stockholm/de-ser-ut-att-hoppa-pa-flytande-isflak-hur-farlig-ar-isen
