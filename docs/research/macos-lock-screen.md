@@ -20,6 +20,7 @@ Research date: 29 October 2026. The Mac in the test runs macOS 27.
 - The screen was unlocked at 12:23:17. At the earlier check, the system reported 44.7 seconds of user inactivity. The log does not establish a full minute of uninterrupted idle time before that check.
 - The earlier `ScreenSaverEngine` test started Lidscape manually from the unlocked desktop. The system received rendered frames and lid angles there. That test did not establish what a person would see on the locked screen.
 - A later test started Lidscape and then used Control-Command-Q. The key press stopped the screen saver, and Peter saw Golden Gate on the Lock Screen. The system reported that the screen saver was no longer running when the manual lock request arrived.
+- In a later manual lock test, loginwindow set a 30-second timer for the lock screen login view. When it expired, macOS turned both displays off. The screen saver was not running. The normal display sleep setting was ten minutes, and the log did not identify a supported setting for the lock screen timer.
 - The Mac's profile sets the password requirement to five seconds after the screen saver starts. This is a delay, not immediate locking.
 
 These observations show that macOS did not start the screen saver during that locked interval. They do not prove that Lidscape cannot display or respond to the lid after the system starts it on a locked Mac.
