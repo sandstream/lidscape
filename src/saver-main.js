@@ -11,7 +11,7 @@ import { findTheme } from './themes/index.js'
 import { findVariant } from './variants/index.js'
 import { buildPost } from './post.js'
 import { setOffAxis } from './offaxis.js'
-import { connectLid } from './lid.js'
+import { lidProgressForAngle } from './lid.js'
 
 const SCREEN_H = 19.5
 const EYE = { x: 0, y: 1.5, z: 55 }
@@ -82,9 +82,15 @@ function resize() {
 addEventListener('resize', resize)
 resize()
 
-// The screen saver has no pointer, camera, menus, or manual book control.
-// On a Mac without a readable lid sensor, the book stays open.
-const lid = connectLid(() => {})
+// The native screen saver reads the lid sensor and sends its angle to this page.
+// On a Mac without a readable sensor, the book stays open.
+const lid = { connected: false, progress: null, disconnect() {} }
+window.lidscapeSaverSetLidAngle = (angle) => {
+  const next = lidProgressForAngle(angle)
+  if (next == null) return
+  lid.connected = true
+  lid.progress = next
+}
 const clock = new THREE.Clock()
 let progress = 1
 let running = true

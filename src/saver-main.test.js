@@ -22,10 +22,7 @@ test('the offline screen saver draws the city and map and follows the lid', { ti
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.addInitScript(() => {
-      window.WebSocket = class {
-        constructor() { window.__lidSocket = this }
-        sendAngle(angle) { this.onmessage({ data: JSON.stringify({ angle }) }) }
-      }
+      window.WebSocket = class { constructor() { throw new Error('The screen saver must use the native sensor') } }
     })
     await page.route('http://lidscape.test/**', (route) => {
       const path = new URL(route.request().url()).pathname
@@ -41,12 +38,14 @@ test('the offline screen saver draws the city and map and follows the lid', { ti
       assert.equal(await page.locator('#error').textContent(), '')
       assert.equal(await page.locator('body > canvas').count(), 1)
       assert.ok((await page.screenshot()).length > 20000, `${view} picture is empty`)
+      await page.evaluate(() => window.lidscapeSaverSetLidAngle(15))
+      await page.waitForFunction(() => window.lidscapeSaver.lid.progress === 0)
       if (view === 'map') {
-        await page.evaluate(() => { window.__lidSocket.onopen(); window.__lidSocket.sendAngle(15) })
         await page.waitForFunction(() => window.lidscapeSaver.worldMap.leftPage.rotation.y > 1.4)
-        await page.evaluate(() => window.__lidSocket.sendAngle(105))
-        await page.waitForFunction(() => Math.abs(window.lidscapeSaver.worldMap.leftPage.rotation.y) < 0.01)
       }
+      await page.evaluate(() => window.lidscapeSaverSetLidAngle(105))
+      await page.waitForFunction(() => window.lidscapeSaver.lid.progress === 1)
+      if (view === 'map') await page.waitForFunction(() => Math.abs(window.lidscapeSaver.worldMap.leftPage.rotation.y) < 0.01)
     }
     assert.deepEqual(errors, [])
   } finally {

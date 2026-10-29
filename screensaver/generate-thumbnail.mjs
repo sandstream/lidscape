@@ -13,10 +13,15 @@ const browser = await chromium.launch({
   args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'],
 })
 try {
-  for (const scale of [1, 2]) {
+  const images = [
+    { name: 'thumbnail.png', width: 240, height: 156, scale: 1 },
+    { name: 'thumbnail@2x.png', width: 240, height: 156, scale: 2 },
+    { name: 'poster.png', width: 2560, height: 1440, scale: 1 },
+  ]
+  for (const image of images) {
     const page = await browser.newPage({
-      viewport: { width: 240, height: 156 },
-      deviceScaleFactor: scale,
+      viewport: { width: image.width, height: image.height },
+      deviceScaleFactor: image.scale,
     })
     await page.addInitScript(() => {
       window.WebSocket = class { constructor() {} }
@@ -35,8 +40,7 @@ try {
     await page.waitForFunction(() => window.lidscapeFrameSignals > 1)
     const error = await page.locator('#error').textContent()
     if (error) throw new Error(`Cannot render screen saver thumbnail: ${error}`)
-    const name = scale === 1 ? 'thumbnail.png' : 'thumbnail@2x.png'
-    await page.screenshot({ path: join(outputDirectory, name) })
+    await page.screenshot({ path: join(outputDirectory, image.name) })
     await page.close()
   }
 } finally {

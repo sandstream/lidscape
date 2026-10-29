@@ -37,11 +37,14 @@ double-click `LidscapeScreenSaver.saver`. Confirm installation for this user in 
 Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
 Use the screen saver's **Options** control to choose city, theme, variant and view.
 To remove it, delete `~/Library/Screen Savers/LidscapeScreenSaver.saver`.
-The screen saver uses the lid sensor and does not use the camera.
+The screen saver starts its bundled sensor app while it runs. The sensor app
+reads the lid angle and sends it to the screen saver. It does not use the camera.
 
-The build captures the Stockholm scene for the thumbnail in Mac settings.
-Mac settings shows a still preview. The full-screen view uses the animated scene.
-The system full-screen screen saver still needs a real Mac test before release.
+The build captures Stockholm at two sizes: a small settings thumbnail and a
+full-screen poster. The poster appears while the animated scene starts.
+The full-screen screen saver rendered live in macOS on a real MacBook. The lid
+sensor connected there. Closing the physical lid and waking the Mac still need
+a separate check before release.
 Build the separate download from the repository root:
 
 ```bash
