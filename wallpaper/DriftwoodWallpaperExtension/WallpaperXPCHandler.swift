@@ -225,6 +225,7 @@ enum Lifecycle {
 
     /// Pending per-display teardown timers. Touched ONLY on `queue`.
     nonisolated(unsafe) static var teardownTimers: [DisplayKey: DispatchWorkItem] = [:]
+    static let retirementTickets = WallpaperRetirementTickets<DisplayKey>()
 
     /// Grace between an invalidate of a display's LIVE wallpaper and actually tearing it
     /// down. A re-acquire (display woke / switched) cancels it; only a display that stays
@@ -250,7 +251,9 @@ enum Lifecycle {
 /// MUST be called on `Lifecycle.queue`.
 private func scheduleTeardown(for key: DisplayKey) {
     Lifecycle.teardownTimers[key]?.cancel()
+    let ticket = Lifecycle.retirementTickets.begin(key)
     let item = DispatchWorkItem {
+        guard Lifecycle.retirementTickets.consume(key, ticket) else { return }
         Lifecycle.teardownTimers[key] = nil
         let torn = WallpaperState.shared.tearDownContext(for: key)
         extensionLog("  [teardown] grace fired for display \(key.displayID) → \(torn ? "stopped renderer + invalidated CAContext" : "nothing to tear down")")
@@ -265,6 +268,7 @@ private func scheduleTeardown(for key: DisplayKey) {
 /// Cancel a display's pending teardown because it was re-acquired (woke / switched).
 /// MUST be called on `Lifecycle.queue`.
 private func cancelTeardown(for key: DisplayKey) {
+    Lifecycle.retirementTickets.cancel(key)
     if let item = Lifecycle.teardownTimers.removeValue(forKey: key) {
         item.cancel()
         extensionLog("  [teardown] cancelled pending teardown for display \(key.displayID) (re-acquired)")
@@ -311,34 +315,51 @@ private func cancelPreviewIdle(for key: DisplayKey) {
 /// wallpaper changes pile up remote surfaces and can desynchronize WallpaperAgent
 /// (partial/quarter-screen output until it is restarted).
 /// MUST be called on `Lifecycle.queue`.
-private func retireSupersededSurfaces(replacedBy replacementKey: DisplayKey) {
-    let superseded = Lifecycle.teardownTimers.keys.filter {
-        WallpaperState.shared.isReadyReplacement(replacementKey, for: $0)
-    }
-    for key in superseded {
-        Lifecycle.teardownTimers.removeValue(forKey: key)?.cancel()
-        let torn = WallpaperState.shared.tearDownContext(for: key)
-        extensionLog(
-            "  [teardown] replacement ready on display \(key.displayID) → "
-                + (torn ? "reclaimed superseded surface" : "surface already gone")
-        )
-        if torn {
-            WallpaperState.shared.logLifecycleTelemetry("replacement ready")
+private func scheduleReplacementRetirement(
+    _ key: DisplayKey, ticket: UUID, replacementKey: DisplayKey, generation: UUID
+) {
+    Lifecycle.retirementTickets.afterHandoff(
+        key,
+        ticket: ticket,
+        schedule: { callback in
+            Lifecycle.queue.asyncAfter(deadline: .now() + Lifecycle.replacementHandoffGrace, execute: callback)
+        },
+        replacementIsReady: {
+            WallpaperState.shared.isReadyReplacement(replacementKey, generation: generation, for: key)
+        },
+        retire: {
+            Lifecycle.teardownTimers.removeValue(forKey: key)?.cancel()
+            let torn = WallpaperState.shared.tearDownContext(for: key)
+            extensionLog(
+                "  [teardown] replacement ready on display \(key.displayID) → "
+                    + (torn ? "reclaimed superseded surface" : "surface already gone")
+            )
+            if torn {
+                WallpaperState.shared.logLifecycleTelemetry("replacement ready")
+            }
+        }
+    )
+}
+
+private func scheduleReplacementHandoffs(for key: DisplayKey) {
+    for oldKey in Lifecycle.retirementTickets.keys {
+        guard let ticket = Lifecycle.retirementTickets.ticket(for: oldKey) else { continue }
+        for (replacement, generation) in WallpaperState.shared.readyReplacements(for: oldKey)
+            where replacement == key {
+            scheduleReplacementRetirement(oldKey, ticket: ticket, replacementKey: key, generation: generation)
         }
     }
 }
 
 /// Mark a new surface ready from any callback queue, then serialize retirement
 /// with acquire/invalidate handling.
-private func surfaceBecameReady(_ key: DisplayKey) {
-    WallpaperState.shared.markReady(for: key)
+private func surfaceBecameReady(_ key: DisplayKey, surface: WallpaperSurface) {
     // Queue behind policy work scheduled by the acquire completion so the logged
     // requested policy is current.
     Lifecycle.queue.async {
+        guard WallpaperState.shared.markReady(for: key, surface: surface) else { return }
         WallpaperState.shared.logLifecycleTelemetry("surface ready")
-    }
-    Lifecycle.queue.asyncAfter(deadline: .now() + Lifecycle.replacementHandoffGrace) {
-        retireSupersededSurfaces(replacedBy: key)
+        scheduleReplacementHandoffs(for: key)
     }
 }
 
@@ -667,6 +688,9 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                 WallpaperPrefs.shared.applyCurrentState(to: key)
                 WallpaperPrefs.shared.refreshActiveState()
                 WallpaperState.shared.logLifecycleTelemetry("surface re-acquired")
+                if existing.isReady {
+                    scheduleReplacementHandoffs(for: key)
+                }
             }
 
             let assignmentAlreadyApplied =
@@ -837,7 +861,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
             // soon as it's installed; reply immediately.
             installFallbackGradient(on: remote.rootLayer)
             reply(remote.replyObject, nil)
-            surfaceBecameReady(key)
+            surfaceBecameReady(key, surface: remote.surface)
             extensionLog("  No video file found — solid color fallback")
             return
         }
@@ -860,7 +884,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                     )
                 }
                 reply(remote.replyObject, nil)
-                surfaceBecameReady(key)
+                surfaceBecameReady(key, surface: remote.surface)
                 return
             }
         } else {
@@ -917,7 +941,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                     nil
                 )
             }
-            surfaceBecameReady(key)
+            surfaceBecameReady(key, surface: remote.surface)
         }
         if !isMetalScene {
             let w = Int(geometry.snapshotPixelSize.width)
@@ -1078,26 +1102,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
         cancelPreviewIdle(for: key)
         scheduleTeardown(for: key)
         WallpaperState.shared.logLifecycleTelemetry("surface invalidated")
-        if WallpaperState.shared.hasReadyReplacement(for: key) {
+        let replacements = WallpaperState.shared.readyReplacements(for: key)
+        if !replacements.isEmpty, let ticket = Lifecycle.retirementTickets.ticket(for: key) {
             extensionLog(
                 "=== INVALIDATE === \(targetDescription) → replacement ready; "
                     + "reclaiming display \(key.displayID) surface after handoff"
             )
-            Lifecycle.queue.asyncAfter(
-                deadline: .now() + Lifecycle.replacementHandoffGrace
-            ) {
-                guard WallpaperState.shared.hasReadyReplacement(for: key) else { return }
-                Lifecycle.teardownTimers.removeValue(forKey: key)?.cancel()
-                let torn = WallpaperState.shared.tearDownContext(for: key)
-                extensionLog(
-                    "  [teardown] replacement handoff on display \(key.displayID) → "
-                        + (torn ? "reclaimed superseded surface" : "surface already gone")
-                )
-                if torn {
-                    WallpaperState.shared.logLifecycleTelemetry(
-                        "replacement handoff"
-                    )
-                }
+            for (replacement, generation) in replacements {
+                scheduleReplacementRetirement(key, ticket: ticket, replacementKey: replacement, generation: generation)
             }
         } else {
             extensionLog(

@@ -27,6 +27,8 @@ struct ActiveWallpaper: @unchecked Sendable {
     /// The XPC connection that most recently acquired this surface. UUID-less invalidation
     /// fallback uses it to reject stale history from an older connection.
     var acquisitionOwner: UUID
+    /// Changes when this instance loses or regains hosting.
+    var hostingGeneration = UUID()
     /// Last effective policy requested for this surface. Renderer policy changes are
     /// asynchronous, so lifecycle logging reports this value as requested, not observed.
     var playbackPolicy: PlaybackPolicy = .full
@@ -56,7 +58,7 @@ struct HostedWallpaperSurface: @unchecked Sendable {
 /// transient flash during the desktop↔lock reveal). Keying by the WallpaperID UUID gives
 /// each surface its own context, so none can steal another's. `displayID` is retained for
 /// display-level fan-out (policy, per-display switch).
-struct DisplayKey: Hashable {
+struct DisplayKey: Hashable, Sendable {
     let displayID: UInt32
     let surfaceUUID: UUID
 }
@@ -186,18 +188,21 @@ final class WallpaperState: Sendable {
     }
 
     /// Mark a surface as safe for WallpaperAgent to host.
-    func markReady(for key: DisplayKey) {
+    @discardableResult
+    func markReady(for key: DisplayKey, surface: WallpaperSurface) -> Bool {
         lock.withLock { state in
-            guard var context = state.contexts[key] else { return }
+            guard var context = state.contexts[key], context.isHosted,
+                  context.surface === surface else { return false }
             context.isReady = true
             state.contexts[key] = context
+            return true
         }
     }
 
     /// Whether `replacementKey` is a ready successor for an invalidated surface.
     /// Preview and live surfaces are separate roles; replacing one must never tear
     /// down the other.
-    func isReadyReplacement(_ replacementKey: DisplayKey, for oldKey: DisplayKey) -> Bool {
+    func isReadyReplacement(_ replacementKey: DisplayKey, generation: UUID, for oldKey: DisplayKey) -> Bool {
         lock.withLock { state in
             guard replacementKey != oldKey,
                   let replacement = state.contexts[replacementKey],
@@ -206,6 +211,8 @@ final class WallpaperState: Sendable {
             }
             return replacement.isReady
                 && replacement.isHosted
+                && replacement.hostingGeneration == generation
+                && !old.isHosted
                 && replacement.displayID == old.displayID
                 && replacement.isPreview == old.isPreview
         }
@@ -213,15 +220,16 @@ final class WallpaperState: Sendable {
 
     /// Whether an invalidated surface already has another ready surface that can
     /// replace it on the same display without exposing a black transition.
-    func hasReadyReplacement(for oldKey: DisplayKey) -> Bool {
+    func readyReplacements(for oldKey: DisplayKey) -> [(DisplayKey, UUID)] {
         lock.withLock { state in
-            guard let old = state.contexts[oldKey] else { return false }
-            return state.contexts.contains { key, context in
-                key != oldKey
+            guard let old = state.contexts[oldKey], !old.isHosted else { return [] }
+            return state.contexts.compactMap { key, context in
+                guard key != oldKey
                     && context.isReady
                     && context.isHosted
                     && context.displayID == old.displayID
-                    && context.isPreview == old.isPreview
+                    && context.isPreview == old.isPreview else { return nil }
+                return (key, context.hostingGeneration)
             }
         }
     }
@@ -381,6 +389,7 @@ final class WallpaperState: Sendable {
                 return nil
             }
             context.isHosted = false
+            context.hostingGeneration = UUID()
             context.playbackPolicy = .paused
             state.contexts[key] = context
             return context.surface
@@ -404,6 +413,9 @@ final class WallpaperState: Sendable {
         let changed = lock.withLock { state -> Bool in
             guard var context = state.contexts[key] else { return false }
             let changed = !context.isHosted
+            if changed {
+                context.hostingGeneration = UUID()
+            }
             context.isHosted = true
             context.acquisitionOwner = owner
             state.contexts[key] = context
