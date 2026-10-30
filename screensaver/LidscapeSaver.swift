@@ -71,6 +71,25 @@ private final class WeakFrameHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+private final class SensorPing: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Result<Void, Error>?
+    let startedAt = ProcessInfo.processInfo.systemUptime
+
+    func complete(_ error: Error?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard stored == nil else { return }
+        stored = error.map { .failure($0) } ?? .success(())
+    }
+
+    var result: Result<Void, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+}
+
 @objc(LidscapeSaverView)
 final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMessageHandler {
     private lazy var saverDefaults = ScreenSaverDefaults(forModuleWithName: saverBundleID)
@@ -88,6 +107,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     private var sensorSession: URLSession?
     private var sensorTask: URLSessionWebSocketTask?
     private var sensorHeartbeatTimer: Timer?
+    private var sensorPingPending: SensorPing?
+    private var sensorPingTimeoutScheduled = false
     private var sensorRetryDelay = 0.25
     private var sensorActive = false
     private var sensorHelperURL: URL?
@@ -332,6 +353,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         sensorHeartbeatTimer = nil
         sensorTask?.cancel(with: .goingAway, reason: nil)
         sensorTask = nil
+        sensorPingPending = nil
+        sensorPingTimeoutScheduled = false
         sensorSession?.invalidateAndCancel()
         sensorSession = nil
         sensorHelperURL = nil
@@ -432,11 +455,65 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         sensorRetryDelay = 0.25
         sensorHelperURL = resources.appendingPathComponent("Lidscape Sensor.app")
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
-            self?.sensorTask?.send(.string("keepalive")) { _ in }
+            self?.checkSensorHeartbeat()
         }
         RunLoop.main.add(timer, forMode: .common)
         sensorHeartbeatTimer = timer
         connectSensor()
+    }
+
+    private func checkSensorHeartbeat() {
+        guard sensorActive, let task = sensorTask else { return }
+        task.send(.string("keepalive")) { _ in }
+        if let pending = sensorPingPending {
+            if pending.result == nil {
+                let elapsed = ProcessInfo.processInfo.systemUptime - pending.startedAt
+                guard elapsed >= (sensorHeartbeatTimer?.timeInterval ?? 5) else { return }
+                guard !sensorPingTimeoutScheduled else { return }
+                sensorPingTimeoutScheduled = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak task] in
+                    guard let self, let task, self.sensorActive, self.sensorTask === task,
+                          self.sensorPingPending === pending else { return }
+                    if pending.result == nil { self.sensorDisconnected(task) }
+                    else { self.sensorPingCompleted(task, ping: pending) }
+                }
+                return
+            }
+            sensorPingCompleted(task, ping: pending)
+            guard sensorActive, sensorTask === task else { return }
+        }
+        let ping = SensorPing()
+        sensorPingPending = ping
+        task.sendPing { [weak self, weak task, ping] error in
+            ping.complete(error)
+            DispatchQueue.main.async { [weak self, weak task] in
+                guard let self, let task else { return }
+                self.sensorPingCompleted(task, ping: ping)
+            }
+        }
+    }
+
+    private func sensorPingCompleted(_ task: URLSessionWebSocketTask, ping: SensorPing) {
+        guard sensorActive, sensorTask === task, sensorPingPending === ping,
+              let result = ping.result else { return }
+        sensorPingPending = nil
+        sensorPingTimeoutScheduled = false
+        if case .failure = result { sensorDisconnected(task) }
+    }
+
+    private func sensorDisconnected(_ task: URLSessionWebSocketTask) {
+        guard sensorActive, sensorTask === task else { return }
+        clearLidAngle()
+        sensorTask = nil
+        sensorPingPending = nil
+        sensorPingTimeoutScheduled = false
+        task.cancel(with: .goingAway, reason: nil)
+        sensorSession?.invalidateAndCancel()
+        sensorSession = nil
+        requestSensorLaunch()
+        let delay = sensorRetryDelay
+        sensorRetryDelay = min(delay * 2, 3)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.connectSensor() }
     }
 
     private func requestSensorLaunch(now: Date = Date()) {
@@ -460,7 +537,9 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
 
     private func connectSensor() {
         guard sensorActive, sensorTask == nil, let url = URL(string: "ws://127.0.0.1:8787") else { return }
-        let session = URLSession(configuration: .ephemeral)
+        let callbacks = OperationQueue()
+        callbacks.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: .ephemeral, delegate: nil, delegateQueue: callbacks)
         let task = session.webSocketTask(with: url)
         sensorSession = session
         sensorTask = task
@@ -479,14 +558,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
                 case .success(.data):
                     self.receiveSensor(task)
                 case .failure:
-                    self.clearLidAngle()
-                    self.sensorTask = nil
-                    self.sensorSession?.invalidateAndCancel()
-                    self.sensorSession = nil
-                    self.requestSensorLaunch()
-                    let delay = self.sensorRetryDelay
-                    self.sensorRetryDelay = min(delay * 2, 3)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.connectSensor() }
+                    self.sensorDisconnected(task)
                 @unknown default:
                     self.receiveSensor(task)
                 }

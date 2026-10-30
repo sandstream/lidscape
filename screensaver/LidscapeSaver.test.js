@@ -660,3 +660,145 @@ view.exerciseSensorReconnect()
     }
   })
 }
+
+test('the screen saver reconnects when the sensor stops answering pings', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 15000,
+}, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-stall-test-'))
+  const server = createServer()
+  const sockets = new Set()
+  let child
+  let connections = 0
+  let unansweredPings = 0
+  let answeredPings = 0
+  let keepalives = 0
+  let output = ''
+  let errors = ''
+  const stopChild = () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  t.signal.addEventListener('abort', stopChild, { once: true })
+  server.on('upgrade', (request, socket) => {
+    const id = ++connections
+    sockets.add(socket)
+    socket.on('close', () => sockets.delete(socket))
+    socket.on('error', () => {})
+    socket.on('end', () => socket.end())
+    let buffered = Buffer.alloc(0)
+    socket.on('data', chunk => {
+      buffered = Buffer.concat([buffered, chunk])
+      while (buffered.length >= 2) {
+        const opcode = buffered[0] & 15
+        const masked = (buffered[1] & 128) !== 0
+        const length = buffered[1] & 127
+        if (length >= 126) return socket.destroy()
+        const offset = 2 + (masked ? 4 : 0)
+        if (buffered.length < offset + length) return
+        const payload = Buffer.from(buffered.subarray(offset, offset + length))
+        if (masked) for (let i = 0; i < payload.length; i++) payload[i] ^= buffered[2 + i % 4]
+        buffered = buffered.subarray(offset + length)
+        if (opcode === 1 && payload.toString() === "keepalive") keepalives++
+        if (opcode === 9) {
+          if (id === 1) unansweredPings++
+          else {
+            answeredPings++
+            const pong = Buffer.concat([Buffer.from([0x8a, payload.length]), payload])
+            if (id === 2) setTimeout(() => { if (!socket.destroyed) socket.write(pong) }, 120)
+            else socket.write(pong)
+          }
+        } else if (opcode === 8) {
+          socket.end(Buffer.concat([Buffer.from([0x88, payload.length]), payload]))
+          return
+        }
+      }
+    })
+    const key = request.headers['sec-websocket-key']
+    const accept = createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    const angle = id === 1 ? 120 : id === 2 ? 130 : 145
+    const payload = Buffer.from(`{"angle":${angle}}`)
+    socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]))
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    let source = original.replace('ws://127.0.0.1:8787', 'ws://127.0.0.1:\\(CommandLine.arguments[1])')
+    source = source.replace('Timer(timeInterval: 5, repeats: true)', 'Timer(timeInterval: 0.25, repeats: true)')
+    if (source === original || !source.includes('Timer(timeInterval: 0.25, repeats: true)')) throw new Error('Sensor test seams missing')
+    const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseUnresponsiveSensor(resources: URL, other: LidscapeSaverView) {
+        startSensor(resources: resources)
+        sensorHeartbeatTimer?.fireDate = .distantFuture
+        guard let oldTask = sensorTask else { preconditionFailure("Initial sensor task is missing") }
+        let deadline = Date().addingTimeInterval(5)
+        func waitFor(_ condition: () -> Bool, _ message: String) {
+            while !condition() && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            precondition(condition(), message)
+        }
+        waitFor({ lastLidAngle == 120 }, "The first sensor angle did not arrive")
+        other.startSensor(resources: resources)
+        waitFor({ other.lastLidAngle == 130 }, "The second view did not connect")
+        sensorHeartbeatTimer?.fireDate = Date()
+        waitFor({ lastLidAngle == 145 }, "The sensor did not reconnect after it stopped answering")
+        guard let newTask = sensorTask else { preconditionFailure("Reconnected task is missing") }
+        let latePing = SensorPing()
+        latePing.complete(NSError(domain: "late", code: 1))
+        sensorPingCompleted(oldTask, ping: latePing)
+        sensorPingCompleted(newTask, ping: latePing)
+        precondition(sensorTask === newTask && lastLidAngle == 145, "A late callback must not affect the new connection")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.75))
+        precondition(lastLidAngle == 145 && other.lastLidAngle == 130, "Healthy, still sensors must stay connected")
+        other.sensorHeartbeatTimer?.fireDate = .distantFuture
+        waitFor({ other.sensorPingPending == nil }, "The second sensor ping did not finish")
+        guard let otherTask = other.sensorTask else { preconditionFailure("Second sensor task is missing") }
+        other.checkSensorHeartbeat()
+        other.sensorHeartbeatTimer?.fireDate = Date().addingTimeInterval(0.25)
+        Thread.sleep(forTimeInterval: 0.7)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        precondition(other.sensorTask === otherTask && other.lastLidAngle == 130, "A delayed main thread must not disconnect a healthy sensor")
+        stopAnimation()
+        sensorPingCompleted(newTask, ping: latePing)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        precondition(!sensorActive && sensorTask == nil, "Stopping must keep the sensor disconnected")
+        precondition(other.sensorActive && other.lastLidAngle == 130, "Stopping one view must not stop the other")
+        other.stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+let other = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseUnresponsiveSensor(resources: URL(fileURLWithPath: CommandLine.arguments[2]), other: other)
+`
+    const file = join(dir, 'stall.swift')
+    const executable = join(dir, 'stall')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    child = spawn(executable, [String(server.address().port), dir])
+    child.stdout.on('data', chunk => { output += chunk })
+    child.stderr.on('data', chunk => { errors += chunk })
+    const status = await new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+    if (status !== 0) throw new Error(`Sensor stall test failed (${status}): connections=${connections}, unansweredPings=${unansweredPings}, answeredPings=${answeredPings}; ${errors}`)
+    if (connections !== 3 || unansweredPings < 1 || answeredPings < 1 || keepalives < 3) {
+      throw new Error(`Unexpected sensor ping behavior: connections=${connections}, missed=${unansweredPings}, answered=${answeredPings}, keepalives=${keepalives}, output=${output}`)
+    }
+  } finally {
+    t.signal.removeEventListener('abort', stopChild)
+    const childClosed = child?.exitCode === null && child.signalCode === null
+      ? new Promise(resolve => child.once('close', resolve)) : null
+    stopChild()
+    if (childClosed) await childClosed
+    for (const socket of sockets) socket.destroy()
+    await new Promise(resolve => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})
