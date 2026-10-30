@@ -234,7 +234,11 @@ impl ExtractedHost {
 
 fn update_needed(installed: &str, bundled: &str) -> bool {
     fn numbers(version: &str) -> Option<Vec<u32>> {
-        version.split('.').map(|part| part.parse::<u32>().ok()).collect()
+        let mut parts: Vec<u32> = version.split('.').map(|part| part.parse::<u32>().ok()).collect::<Option<_>>()?;
+        while parts.len() > 1 && parts.last() == Some(&0) {
+            parts.pop();
+        }
+        Some(parts)
     }
     match (numbers(installed), numbers(bundled)) {
         (Some(installed), Some(bundled)) => bundled > installed,
@@ -597,6 +601,13 @@ mod tests {
         assert!(!update_needed("0.2.0", "0.2.0"));
         assert!(!update_needed("0.3.0", "0.2.0"));
         assert!(update_needed("unknown", "0.2.0"));
+        assert!(!update_needed("1.2", "1.2.0"));
+        assert!(!update_needed("1.2.0", "1.2"));
+        assert!(!update_needed("1.2.0.0", "1.2"));
+        assert!(update_needed("1.2", "1.2.1"));
+        assert!(!update_needed("1.2.1", "1.2"));
+        assert!(update_needed("", "0.2.0"));
+        assert!(update_needed("0.2.0", "broken"));
     }
 
     #[test]
