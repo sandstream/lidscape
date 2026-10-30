@@ -13,7 +13,9 @@ model, including asynchronous stop, flush and disposal.
 `check-wallpaper-state-handoff.sh` exercises the actual `WallpaperState` with
 fake surfaces and contexts. It checks hosting generations, preview isolation,
 and the wait for surface stop before context invalidation. It also checks that
-a late stop callback does not invalidate a new context under the same key.
+a late stop callback does not invalidate a new context under the same key. A
+first frame received during disconnection remains ready after reconnection.
+A stale first frame cannot mark a replacement surface ready.
 These checks do not call `WallpaperXPCHandler` or host a real CAContext.
 
 The extension build checks that the XPC and state integration compiles. It does

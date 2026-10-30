@@ -191,7 +191,7 @@ final class WallpaperState: Sendable {
     @discardableResult
     func markReady(for key: DisplayKey, surface: WallpaperSurface) -> Bool {
         lock.withLock { state in
-            guard var context = state.contexts[key], context.isHosted,
+            guard var context = state.contexts[key],
                   context.surface === surface else { return false }
             context.isReady = true
             state.contexts[key] = context
