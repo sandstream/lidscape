@@ -59,6 +59,12 @@ A local socket probe tested this mechanism five times. Temporary command-line pr
 
 The probe used ad hoc signatures and required an exact code hash. Its sandbox allowed broad file reads and outbound network access. It did not test Developer ID requirements, the real Apple screen saver host, the wallpaper extension, or their sandbox policies. It did not contact the existing sensor helper. The temporary processes and files were removed.
 
+A second local probe used Sandstream's Developer ID Application signature without a network timestamp. Each endpoint checked the peer audit token against the expected team and identifier. Six trusted clients started in parallel. The server handled their connections one at a time. A client with a generic sandbox profile also connected.
+
+An ad hoc client with the trusted client identifier was rejected. An ad hoc server with the trusted server identifier was also rejected. A valid server was rejected when the client required a different team or identifier. The full probe passed four times.
+
+The second probe used temporary command-line processes and a permissive sandbox profile. It did not exercise the screen saver or wallpaper extension. It did not contact existing sensor processes. All test processes and files were removed. The real integration and its sandbox behavior remain to be tested.
+
 The actual screen saver runs inside Apple's `com.apple.ScreenSaver.Engine.legacyScreenSaver` process. On the test Mac, that process is sandboxed and has the network client entitlement. Its signature does not list Lidscape's App Group. A code-signature check can identify Apple's host process. It cannot identify which screen saver module is running inside that process. Another module in the same host shares the host's identity. This is an explicit limit of the proposed check.
 
 The wallpaper extension is signed by Sandstream and has Lidscape's App Group. Its connection must be checked separately from the Apple screen saver host. Apple says sandbox permissions do not override all other file access controls. See [Accessing files from the macOS App Sandbox](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox). The legacy host's access to the proposed socket location is not established by its entitlements alone.
