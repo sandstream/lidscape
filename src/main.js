@@ -722,8 +722,8 @@ function frame() {
   if (focusId) {
     const target = pointerInside ? Math.min(0.9, Math.max(0.1, (pointerNdc.y + 1) / 2)) : settings[focusId]
     focus += (target - focus) * k(4)
-    post.update({ ...settings, [focusId]: focus })
   }
+  post.update(focusId ? { ...settings, [focusId]: focus } : settings, progress)
   updateLabel()
   if (flight === 0) city.renderReflection(renderer, camera)
   composer.render()

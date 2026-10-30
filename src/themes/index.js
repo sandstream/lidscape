@@ -4,8 +4,9 @@
 
 import { paper } from './paper.js'
 import { miniature } from './miniature.js'
+import { monet } from './monet.js'
 
-export const THEMES = [paper, miniature]
+export const THEMES = [paper, miniature, monet]
 
 export function findTheme(id) {
   return THEMES.find((t) => t.id === id) ?? THEMES[0]

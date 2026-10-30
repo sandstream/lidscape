@@ -8,7 +8,7 @@ test('post effects preserve output order and resize blur by viewport size', () =
   const post = buildPost(composer, { post: { tiltShift: { setting: 'focus', blur: 8 }, grade: { saturation: 1.2 } } }, output)
   post.resize(800, 400)
   post.update({ focus: 0.65 })
-  assert.deepEqual(POST_STEPS, ['tiltShift', 'grade'])
+  assert.deepEqual(POST_STEPS, ['tiltShift', 'grade', 'paint'])
   assert.equal(composer.passes.length, 4)
   assert.equal(composer.passes.at(-1), output)
   const [horizontal, vertical] = composer.passes
