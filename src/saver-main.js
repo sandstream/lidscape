@@ -5,8 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 
 import { buildCity } from './city.js'
-import { buildWorldMap } from './world-map.js'
-import { CITIES, findCity } from './cities/index.js'
+import { findCity } from './cities/index.js'
 import { findTheme } from './themes/index.js'
 import { findVariant } from './variants/index.js'
 import { buildPost } from './post.js'
@@ -19,7 +18,6 @@ const params = new URLSearchParams({
   ...(window.lidscapeSaverOptions ?? {}),
   ...Object.fromEntries(new URLSearchParams(location.search)),
 })
-const view = params.get('view') === 'map' ? 'map' : 'city'
 const lowQuality = params.get('quality') === 'low'
 const cityDef = findCity(params.get('city'))
 const theme = findTheme(params.get('theme'))
@@ -56,10 +54,7 @@ moonLight.shadow.radius = 4
 scene.add(moonLight)
 
 const city = buildCity(cityDef, scene, -SCREEN_H / 2, { variant, settings })
-const worldMap = buildWorldMap(scene, CITIES)
-city.root.visible = view === 'city'
-worldMap.root.visible = view === 'map'
-city.setReflections(view === 'city' && !lowQuality)
+city.setReflections(!lowQuality)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
@@ -105,11 +100,8 @@ function frame(now) {
   const dt = Math.min(clock.getDelta(), 0.1)
   const target = lid.connected && lid.progress != null ? lid.progress : 1
   progress += (target - progress) * (1 - Math.exp(-dt * 6))
-  if (view === 'map') worldMap.update(progress, 1)
-  else {
-    city.update(progress, 1, clock.elapsedTime)
-    if (!lowQuality) city.renderReflection(renderer, camera)
-  }
+  city.update(progress, 1, clock.elapsedTime)
+  if (!lowQuality) city.renderReflection(renderer, camera)
   composer.render()
   window.lidscapeSaverLastRender = Date.now()
   if (now - previousFrameSignal >= 250) {
@@ -120,13 +112,11 @@ function frame(now) {
 
 window.lidscapeSaver = {
   city,
-  worldMap,
   scene,
   camera,
   composer,
   renderer,
   lid,
-  view,
   stop() {
     running = false
     lid.disconnect()

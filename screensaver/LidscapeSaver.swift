@@ -7,7 +7,6 @@ private struct SaverSettings: Codable {
     let city: String
     let theme: String
     let variant: String
-    let view: String
 }
 
 private struct SaverOption: Decodable {
@@ -58,7 +57,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     private var sensorHelperURL: URL?
     private var lastLidAngle: Int?
     private var settingsSheet: NSWindow?
-    private var viewChoice: NSPopUpButton?
     private var cityChoice: NSPopUpButton?
     private var themeChoice: NSPopUpButton?
     private var variantChoice: NSPopUpButton?
@@ -78,25 +76,17 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let content = NSView(frame: sheet.contentRect(forFrameRect: sheet.frame))
         sheet.contentView = content
 
-        let view = choice([
-            SaverOption(id: "city", en: "City", sv: "Stad"),
-            SaverOption(id: "map", en: "World map", sv: "Världskarta"),
-        ], selected: current.view)
         let city = choice(options.cities, selected: current.city)
         let theme = choice(options.themes, selected: current.theme)
         let variant = choice(
             [SaverOption(id: "", en: "None", sv: "Ingen")] + options.variants,
             selected: current.variant
         )
-        view.target = self
-        view.action = #selector(viewChanged)
-        viewChoice = view
         cityChoice = city
         themeChoice = theme
         variantChoice = variant
 
         let rows: [(String, NSPopUpButton)] = [
-            (swedish ? "Bild" : "Picture", view),
             (swedish ? "Stad" : "City", city),
             (swedish ? "Tema" : "Theme", theme),
             (swedish ? "Variant" : "Variant", variant),
@@ -140,7 +130,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             actions.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -22),
         ])
         settingsSheet = sheet
-        viewChanged()
         return sheet
     }
 
@@ -206,7 +195,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             "city": settings.city,
             "theme": settings.theme,
             "variant": settings.variant,
-            "view": settings.view,
             "quality": isPreview ? "low" : "high",
         ]
         if let data = try? JSONSerialization.data(withJSONObject: options),
@@ -286,7 +274,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     }
 
     private func loadSettings() -> SaverSettings {
-        let fallback = SaverSettings(city: "stockholm", theme: "paper", variant: "", view: "city")
+        let fallback = SaverSettings(city: "stockholm", theme: "paper", variant: "")
         let saved = saverDefaults?.string(forKey: "settingsJSON")
             ?? ScreenSaverDefaults(forModuleWithName: oldSaverBundleID)?.string(forKey: "settingsJSON")
         if let saved,
@@ -322,12 +310,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         popup?.selectedItem?.representedObject as? String ?? ""
     }
 
-    @objc private func viewChanged() {
-        let cityIsVisible = selected(viewChoice) == "city"
-        cityChoice?.isEnabled = cityIsVisible
-        variantChoice?.isEnabled = cityIsVisible
-    }
-
     @objc private func closeConfiguration() {
         guard let sheet = settingsSheet else { return }
         sheet.sheetParent?.endSheet(sheet)
@@ -342,7 +324,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         }
         let settings = SaverSettings(
             city: selected(cityChoice), theme: selected(themeChoice),
-            variant: selected(variantChoice), view: selected(viewChoice)
+            variant: selected(variantChoice)
         )
         do {
             let data = try JSONEncoder().encode(settings)
@@ -366,9 +348,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let cityIsValid = options.cities.contains { $0.id == settings.city }
         let variantIsValid = settings.variant.isEmpty || options.variants.contains { $0.id == settings.variant }
         var name = "poster"
-        if themeIsValid && settings.view == "map" {
-            name = "poster-map-\(settings.theme)"
-        } else if themeIsValid && cityIsValid && variantIsValid && settings.view == "city" {
+        if themeIsValid && cityIsValid && variantIsValid {
             let variant = settings.variant.isEmpty ? "none" : settings.variant
             name = "poster-city-\(settings.city)-\(settings.theme)-\(variant)"
         }

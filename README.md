@@ -26,16 +26,15 @@ IOKit exception, so the app ships outside the App Store.
 
 ### Screen saver
 
-These images show the packaged screen saver with the book open:
+The image shows the packaged screen saver with the book open:
 
 ![Stockholm screen saver](docs/screensaver-city.png)
-![World map screen saver](docs/screensaver-map.png)
 
 The screen saver is also a separate Mac download. It does not need Lidscape.app.
 On macOS 27 or later, unzip `Lidscape-Screen-Saver_<version>_arm64.zip` and
 double-click `LidscapeScreenSaver.saver`. Confirm installation for this user in macOS.
 Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
-Use the screen saver's **Options** control to choose city, theme, variant and view.
+Use the screen saver's **Options** control to choose the city, theme, and variant.
 To remove it, delete `~/Library/Screen Savers/LidscapeScreenSaver.saver`.
 The screen saver starts its bundled sensor app while it runs. The sensor app
 reads the lid angle and sends it to the screen saver. It does not use the camera.
