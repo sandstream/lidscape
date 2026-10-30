@@ -46,3 +46,32 @@ test('the staged lid bridge supports the minimum macOS version of the app', {
     await rm(fixture, { recursive: true, force: true })
   }
 })
+
+test('the release check rejects executables for another platform or architecture', {
+  skip: process.platform !== 'darwin' && 'The release check uses macOS tools',
+}, async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+  const fixture = await mkdtemp(join(tmpdir(), 'lidscape-target-platform-'))
+  try {
+    const plist = join(fixture, 'Info.plist')
+    await writeFile(plist, '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>LSMinimumSystemVersion</key><string>14.4</string></dict></plist>')
+    const check = join(root, 'app/scripts/check-macos-target.py')
+    // Minimal Mach-O headers let the actual macOS tools identify these targets.
+    for (const [name, cpu, subtype, platform, expected] of [
+      ['mac-arm', 0x0100000c, 0, 1, 0],
+      ['ios-arm', 0x0100000c, 0, 2, 1],
+      ['mac-intel', 0x01000007, 3, 1, 1],
+    ]) {
+      const data = Buffer.alloc(56)
+      for (const [index, value] of [0xfeedfacf, cpu, subtype, 6, 1, 24, 0, 0, 0x32, 24, platform, 0x000e0400, 0x001b0000, 0].entries()) {
+        data.writeUInt32LE(value, index * 4)
+      }
+      const binary = join(fixture, name)
+      await writeFile(binary, data)
+      const result = spawnSync('python3', [check, plist, binary], { encoding: 'utf8' })
+      assert.equal(result.status, expected, result.stderr)
+    }
+  } finally {
+    await rm(fixture, { recursive: true, force: true })
+  }
+})
