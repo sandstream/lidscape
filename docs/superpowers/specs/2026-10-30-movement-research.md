@@ -8,19 +8,21 @@ Research, 30 October 2026. This file adds a fourth choice to the plan in
 Today every style uses one movement. Each row of buildings is a card that
 turns up on a hinge as the lid opens (`src/city.js`, `update`). Peter asked for
 other movements: parts that spring apart and come together, parts that hang in
-loops, and a figure on strings that falls down and stands up again.
+loops, a figure on strings that falls down and stands up again, and toy
+bricks and blocks that fall down and build up again.
 
 The style sets how the picture looks. The movement sets how the parts move.
 These are two different things, so they become two choices.
 
-## The four movements
+## The five movements
 
 | Movement | Lid closed (0) | Lid open (1) | Default for |
 | --- | --- | --- | --- |
 | Pop-up (built) | A flat page | The cards stand up | Paper |
 | Push puppet | The string is slack, the figure lies in a heap | The string is tight, the figure stands, with a small wobble | (new) |
 | Mobile | The parts lie in a stack | The parts hang on threads and swing | Monet |
-| Assemble | The parts float apart | The parts fall into place with a small click | Miniature, Bricks |
+| Assemble | The parts float apart | The parts fall into place with a small click | Miniature, Bricks, Mosaic |
+| Crumble | The parts fall down and lie in a pile | The parts build up again, layer by layer from the bottom | Blocks |
 
 The user can change the movement. The style gives only the default.
 
@@ -109,6 +111,35 @@ opens. This is the same as an exploded view in a building guide.
 Rights: the exploded view is a general technique. We use no brand of building
 blocks. This agrees with the rule for Bricks.
 
+### Crumble
+
+The motif falls down as a pile of blocks when the lid closes, and builds up
+again when it opens. This is the movement for Blocks, a cube style (voxels).
+
+- Lidscape converts each motif to cubes on a grid, with `InstancedMesh`. The
+  plan uses the same method for Bricks.
+- Lid closing: the cubes fall in order from the top layer down. Each cube
+  falls with gravity, bounces once and stays on the page.
+- Lid opening: the cubes go back from the bottom layer up, as a player builds
+  a tower.
+- Bricks uses Assemble, Blocks uses Crumble. The two styles look similar, so
+  the movement makes them different.
+
+### Bricks and Blocks: what we may use
+
+- The shape of the basic toy brick is free to use in the EU. The EU Court of
+  Justice held the trade mark for the brick shape invalid, because all its
+  essential characteristics serve a technical function
+  ([C-48/09 P, Lego Juris v OHIM, 14 September 2010](https://jiplp.blogspot.com/2011/01/community-trade-mark-for-lego-brick-is.html)).
+- The toy figures are not free. The EU General Court upheld the trade marks
+  for the shape of the figures, because their shape has no technical function
+  ([T-395/14 and T-396/14, 2015](https://www.mondaq.com/germany/trademark/407238/general-court-declares-lego-community-trademark-valid)).
+  We draw no brick figures.
+- Cube art (voxels) is a general technique. The game name and its textures,
+  for example grass and stone blocks, are protected. Blocks uses flat colours
+  from the motif, not textures from a game.
+- We use the names "Bricks" and "Blocks", never the brand names.
+
 ## The movement contract
 
 This replaces "The fold contract" in the plan.
@@ -178,13 +209,15 @@ This is a gap for all movements, also for Pop-up and the screen saver shuffle.
 | M2 | Codex | Movement contract, the spring, Reduce Motion, the Movement pop-up |
 | M3 | Codex | Push puppet on all motifs (automatic bands) |
 | M3b | Claude | Research and draw the classic figures: donkey first |
-| M4 | Codex | Assemble, then Mobile |
+| M4 | Codex | Assemble (with Bricks), Crumble (with Blocks), then Mobile |
 | M5 | Claude | Tune half-lives and g on real hardware, screenshots |
 
 ## Open questions to Peter
 
 1. Is "Movement" a fourth choice for the user, or only a part of the style?
    The recommendation is a fourth choice with the style default first.
+4. Blocks is a new style next to Bricks. Is the style order now Monet,
+   Bricks, Blocks, Van Gogh, papercut?
 2. Push puppet in the first version, or after the screen saver?
 3. Must a motif that is not a figure (a city) also work as a push puppet? The
    automatic bands make it possible. The result can look strange on wide
