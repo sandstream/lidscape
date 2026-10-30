@@ -523,3 +523,184 @@ view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('diagnose sensor socket cancellation on this macOS version', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-sensor-diagnostic-'))
+  let child
+  let connection
+  let server
+  const stopChild = () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  t.signal.addEventListener('abort', stopChild, { once: true })
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+private final class DiagnosticInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Data?
+    func wait() -> Data {
+        lock.lock(); value = nil; lock.unlock()
+        DispatchQueue.global().async { [self] in
+            let data = FileHandle.standardInput.readData(ofLength: 1)
+            lock.lock(); value = data; lock.unlock()
+        }
+        while true {
+            lock.lock(); let result = value; lock.unlock()
+            if let result { return result }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
+}
+extension LidscapeSaverView {
+    func diagnoseSensorStop(port: Int, mode: String) {
+        sensorActive = true
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.webSocketTask(with: URL(string: "ws://127.0.0.1:\\(port)")!)
+        sensorSession = session
+        sensorTask = task
+        task.resume()
+        receiveSensor(task)
+        let deadline = Date().addingTimeInterval(5)
+        while lastLidAngle != 120 && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        precondition(lastLidAngle == 120, "The test server must send an angle")
+        FileHandle.standardOutput.write(Data("ready\\n".utf8))
+        let input = DiagnosticInput()
+        precondition(input.wait() == Data([83]), "The test must start cancellation")
+        sensorActive = false
+        switch mode {
+        case "task": task.cancel(with: .goingAway, reason: nil)
+        case "session": session.invalidateAndCancel()
+        case "both":
+            task.cancel(with: .goingAway, reason: nil)
+            session.invalidateAndCancel()
+        case "stop": stopAnimation()
+        default: preconditionFailure("Unknown cancellation mode")
+        }
+        FileHandle.standardOutput.write(Data("performed\\n".utf8))
+        precondition(input.wait() == Data([88]), "The test must finish observation")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.diagnoseSensorStop(port: Int(CommandLine.arguments[1])!, mode: CommandLine.arguments[2])
+`
+    const file = join(dir, 'diagnostic.swift')
+    const executable = join(dir, 'diagnostic')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+
+    for (const mode of ['task', 'session', 'both', 'stop']) {
+      let connected = false
+      let sawCloseFrame = false
+      let sawEnd = false
+      let sawClose = false
+      let socketError = null
+      let bytesReceived = 0
+      let frameOpcodes = []
+      let output = ''
+      let errorOutput = ''
+      let started = false
+      let observing = false
+      let observationTimer
+      server = createServer()
+      server.on('upgrade', (request, socket) => {
+        connected = true
+        connection = socket
+        socket.on('error', error => { socketError = error.message })
+        socket.on('end', () => { sawEnd = true })
+        socket.on('close', () => { sawClose = true })
+        let buffered = Buffer.alloc(0)
+        socket.on('data', chunk => {
+          bytesReceived += chunk.length
+          buffered = Buffer.concat([buffered, chunk])
+          while (buffered.length >= 2) {
+            const opcode = buffered[0] & 0x0f
+            const masked = (buffered[1] & 0x80) !== 0
+            let length = buffered[1] & 0x7f
+            let headerLength = 2
+            if (length === 126) {
+              if (buffered.length < 4) return
+              length = buffered.readUInt16BE(2)
+              headerLength = 4
+            } else if (length === 127) {
+              socketError = 'Unexpected large WebSocket frame'
+              socket.destroy()
+              return
+            }
+            const frameLength = headerLength + (masked ? 4 : 0) + length
+            if (buffered.length < frameLength) return
+            const payload = Buffer.from(buffered.subarray(headerLength + (masked ? 4 : 0), frameLength))
+            if (masked) {
+              for (let i = 0; i < payload.length; i++) payload[i] ^= buffered[headerLength + (i % 4)]
+            }
+            buffered = buffered.subarray(frameLength)
+            frameOpcodes.push(opcode)
+            if (opcode === 8) {
+              sawCloseFrame = true
+              socket.end(Buffer.concat([Buffer.from([0x88, payload.length]), payload]))
+              return
+            }
+            if (opcode === 9) socket.write(Buffer.concat([Buffer.from([0x8a, payload.length]), payload]))
+          }
+        })
+        const key = request.headers['sec-websocket-key']
+        const accept = createHash('sha1')
+          .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+          .digest('base64')
+        socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+        const message = Buffer.from('{"angle":120}')
+        socket.write(Buffer.concat([Buffer.from([0x81, message.length]), message]))
+      })
+      await new Promise((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', resolve)
+      })
+      child = spawn(executable, [String(server.address().port), mode])
+      child.stdin.on('error', () => {})
+      child.stdout.on('data', chunk => {
+        output += chunk
+        if (!started && output.includes('ready')) {
+          started = true
+          child.stdin.write('S')
+        }
+        if (!observing && output.includes('performed')) {
+          observing = true
+          observationTimer = setTimeout(() => {
+            t.diagnostic(`sensor cancellation ${JSON.stringify({ mode, connected, sawCloseFrame, sawEnd, sawClose, socketError, bytesReceived, frameOpcodes })}`)
+            child.stdin.end('X')
+          }, 3000)
+        }
+      })
+      child.stderr.on('data', chunk => { errorOutput += chunk })
+      const result = await new Promise((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      clearTimeout(observationTimer)
+      if (result !== 0 || !connected || !started || !observing) {
+        throw new Error(`Sensor diagnostic ${mode} failed (${result}): ${errorOutput}`)
+      }
+      child = undefined
+      connection?.destroy()
+      connection = undefined
+      await new Promise(resolve => server.close(resolve))
+      server = undefined
+    }
+  } finally {
+    t.signal.removeEventListener('abort', stopChild)
+    const childClosed = child?.exitCode === null && child.signalCode === null
+      ? new Promise(resolve => child.once('close', resolve))
+      : null
+    stopChild()
+    if (childClosed) await childClosed
+    connection?.destroy()
+    if (server) await new Promise(resolve => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})
