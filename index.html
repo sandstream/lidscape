@@ -57,6 +57,7 @@
       <select id="camera" hidden></select>
       <button id="help-btn" type="button"></button>
       <button id="city-saver" type="button" hidden></button>
+      <button id="city-wallpaper" type="button" hidden></button>
     </div>
     <p id="hud-hint"></p>
     <p id="hud-update" role="status" hidden><span></span> <button type="button"></button> <button type="button"></button></p>
@@ -87,6 +88,36 @@
       <button id="saver-install" type="button"></button>
       <button id="saver-system" type="button"></button>
       <button id="saver-close" type="button"></button>
+    </div>
+  </dialog>
+
+  <dialog id="wallpaper-settings" aria-labelledby="wallpaper-title">
+    <h2 id="wallpaper-title"></h2>
+    <p id="wallpaper-description"></p>
+    <p id="wallpaper-status" role="status" aria-live="polite"></p>
+    <div id="wallpaper-main">
+      <div id="wallpaper-choices">
+        <label><span id="wallpaper-city-label"></span><select id="wallpaper-city"></select></label>
+        <label><span id="wallpaper-theme-label"></span><select id="wallpaper-theme"></select></label>
+        <label><span id="wallpaper-variant-label"></span><select id="wallpaper-variant"></select></label>
+      </div>
+      <div class="wallpaper-actions">
+        <button id="wallpaper-save" type="button"></button>
+        <button id="wallpaper-install" type="button"></button>
+        <button id="wallpaper-update" type="button" hidden></button>
+        <button id="wallpaper-register" type="button" hidden></button>
+        <button id="wallpaper-system" type="button"></button>
+        <button id="wallpaper-retry" type="button"></button>
+        <button id="wallpaper-close" type="button"></button>
+      </div>
+    </div>
+    <div id="wallpaper-confirmation" hidden>
+      <p id="wallpaper-confirm-description"></p>
+      <div class="wallpaper-actions">
+        <button id="wallpaper-confirm-system" type="button"></button>
+        <button id="wallpaper-confirm" type="button"></button>
+        <button id="wallpaper-confirm-cancel" type="button"></button>
+      </div>
     </div>
   </dialog>
 

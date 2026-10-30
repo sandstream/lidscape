@@ -278,7 +278,7 @@ button[hidden] { display: none; }
 #about p:last-of-type { margin-bottom: 16px; }
 #about a { color: var(--accent); }
 
-#saver-settings {
+#saver-settings, #wallpaper-settings {
   width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow-y: auto;
@@ -288,9 +288,11 @@ button[hidden] { display: none; }
   background: var(--surface-solid);
   color: var(--ink);
 }
-#saver-settings::backdrop { background: rgb(0 0 0 / 0.55); }
-#saver-settings h2 { margin: 0 0 8px; font: 400 26px/1.1 var(--display); }
-#saver-description { margin: 0 0 16px; color: var(--muted); }
-#saver-status { min-height: 20px; margin: 14px 0; color: var(--muted); }
-#saver-status[data-error="true"] { color: #ffb59c; }
-#saver-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#saver-settings::backdrop, #wallpaper-settings::backdrop { background: rgb(0 0 0 / 0.55); }
+#saver-settings h2, #wallpaper-settings h2 { margin: 0 0 8px; font: 400 26px/1.1 var(--display); }
+#saver-description, #wallpaper-description { margin: 0 0 16px; color: var(--muted); }
+#saver-status, #wallpaper-status { min-height: 20px; margin: 14px 0; color: var(--muted); }
+#saver-status[data-error="true"], #wallpaper-status[data-error="true"] { color: #ffb59c; }
+#saver-actions, .wallpaper-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#wallpaper-choices { display: grid; gap: 8px; margin-bottom: 16px; }
+#wallpaper-choices label { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; }

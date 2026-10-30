@@ -9,7 +9,7 @@
 | Mac screen saver | Partial. macOS full-screen rendering and the native lid connection passed on a real MacBook. Physical lid closing and wake-up remain before publication. |
 | iPhone motion screen saver | Planned. The paper scene responds to phone tilt in a full-screen app. |
 | iPhone Lock Screen image | Planned. Export a still image or short Live Photo from Lidscape. |
-| Desktop wallpaper | Planned. |
+| Desktop wallpaper | Partial. Installation, separate settings, the Lock Screen, and removal passed a real Mac test. Updates and power behavior remain. |
 | Separate menus for other motifs | Planned. |
 
 See [the world map design](superpowers/specs/2026-10-27-world-map-design.md).
@@ -37,9 +37,17 @@ The world map is available only in the app. The screen saver shows a city.
 
 ### Desktop wallpaper
 
+- The Mac app includes installation, removal, updates, and separate city, theme, and variant settings. Automated tests pass.
+- A real Mac test installed the wallpaper and saved the Christmas variant. Peter confirmed Stockholm and lid movement on the Lock Screen.
+- Golden Gate was selected before removal. The removal test removed the wallpaper registration.
+- Peter reported that the image and lid worked after wake. The system log did not confirm a sleep event. Repeat the sleep test.
+- Test updates, battery use, and two-display brightness on a Mac before release. Resolve the Swift concurrency warnings before release.
+
 - Start with an exported still image of the current scene. The still image needs no live inputs.
 - Evaluate a moving background separately. Check battery use and macOS support.
 - Give the moving background its own saved settings. Enable only inputs that work while it is in the background.
+- Evaluate optional camera-based head movement for the background. A local probe followed head movement on the Lock Screen. It processed frames locally and used a temporary position file. Test sleep, wake, failure handling, privacy, and performance before adding it to the app.
+- Test a macOS wallpaper extension for the desktop and Lock Screen. [Phosphene and Driftwood](research/macos-lock-screen.md) use private interfaces for moving wallpapers. An isolated probe showed Stockholm on the Lock Screen after Control-Command-Q, and the book followed the physical lid. Test startup while locked, sleep and wake, reliability, battery use, and release signing before publication.
 
 ### iPhone motion screen saver
 
