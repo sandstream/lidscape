@@ -1,5 +1,7 @@
 # New York
 
+Coordinates: 40.722° N, 73.996° W. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), New York point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced. Feet are converted at 1 ft = 0.3048 m.
 
 ## Viewpoint
@@ -57,6 +59,30 @@ Gantry Plaza State Park, Long Island City (Queens), looking west across the East
 - Silhouette: square base; the edges taper as the tower rises, so the faces become triangles and the top is a smaller square turned 45 degrees; a tall thin spire.
 - Local cue: the tapering glass tower with a spire, alone at the island's tip.
 
+## Traits
+
+- snow: true. Central Park gets about 75.7 cm (29.8 in) of snow a year, on
+  about 11 days. Snow depth peaks in February at about 20 cm on average.
+- adventStars: false. Lit paper stars in windows are a German and Swedish
+  custom. No source found names it as a New York custom.
+- ice: true. Ice floes filled the East River in February 2015, and a cargo ship
+  moved slowly through the ice. The scene shows floes, not a frozen river.
+
+## Rights
+
+- Rule: 17 U.S.C. § 120(a). The copyright in a constructed architectural work
+  does not include the right to prevent pictures of it, or their distribution
+  and public display. This applies when the building is in, or ordinarily
+  visible from, a public place. The section has no non-commercial limit.
+- All six landmarks are buildings visible from public places. The drawn view
+  may show them by day and at night.
+- Trademarks are a separate matter. ESRT Empire State Building, L.L.C. holds
+  registered trademarks in images of the building. It licenses the name and
+  image for promotional and advertising use. Do not use the Empire State
+  Building in the app icon or in marketing images without a check.
+- The Pepsi-Cola sign is a trademark logo. It faces west toward Manhattan, so a
+  viewer behind it sees its back. Leave out the Pepsi-Cola lettering.
+
 ## Filler
 
 Midtown: a dense mass of flat-topped office slabs and wedding-cake setback towers, with water tanks on the roofs of lower buildings. Colours are grey stone, brown brick, and dark glass. Along the river: low warehouses and new glass apartment towers.
@@ -82,3 +108,9 @@ Midtown: a dense mass of flat-topped office slabs and wedding-cake setback tower
 - One World Trade Center, 1,776 ft, 1,792 ft, 1,368 ft, 2014: https://en.wikipedia.org/wiki/One_World_Trade_Center
 - Pepsi-Cola sign, faces west toward the UN: https://en.wikipedia.org/wiki/Pepsi-Cola_sign
 - Gantry Plaza State Park, gantries: https://en.wikipedia.org/wiki/Gantry_Plaza_State_Park
+- Snow, 29.8 in, 11.4 days, February depth: https://en.wikipedia.org/wiki/Climate_of_New_York_City
+- Advent stars, German origin, common in Sweden: https://sv.wikipedia.org/wiki/Adventsstj%C3%A4rna
+- Ice floes on the East River, February 2015: https://www.cbsnews.com/pictures/new-yorks-frozen-landscape-from-the-air/
+- 17 U.S.C. § 120(a): https://www.law.cornell.edu/uscode/text/17/120
+- Empire State Building image trademarks: https://trademarks.justia.com/owners/esrt-empire-state-building-l-l-c-2788260
+- Empire State Building licensing: https://www.esbnyc.com/licensing-application

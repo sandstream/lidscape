@@ -1,6 +1,6 @@
 # Stockholm
 
-Coordinates: 59.324° N, 18.068° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Stockholm point, version 5.1.2.
+Coordinates: 59.324° N, 18.066° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Stockholm point, version 5.1.2.
 
 Proportion ratios ("width ≈ 1/6 of height") are visual estimates for drawing. Heights and years are sourced.
 
@@ -75,6 +75,11 @@ This matches the layout in `src/cities/stockholm.js`.
   Mälaren's outflow, so the scene shows floes and ice along the quay, and wider
   cover only with a lot of snow.
 
+## Rights
+
+- Sweden: "Byggnader får fritt avbildas" (buildings may be depicted freely). Artworks permanently placed outdoors on or at a public place may also be depicted. Source: Upphovsrättslagen (1960:729), 24 §.
+- The rule for buildings has no condition about commercial use. Every landmark in this view may be drawn.
+
 ## Filler
 
 Gamla stan: narrow 17th and 18th century merchant houses, tall and thin. Roofs are steep, red or black tin or tile, many with stepped or curved gables facing the water. Facades are ochre, rust red, salmon, cream and pale yellow plaster. Skeppsbron is one continuous wall of these facades. Södermalm behind: a dark ridge with houses stepping up the slope.
@@ -107,4 +112,5 @@ Gamla stan: narrow 17th and 18th century merchant houses, tall and thin. Roofs a
 - Katarina kyrka, 72 m, 1695, 1723, 1990, 1995, four corner towers: https://sv.wikipedia.org/wiki/Katarina_kyrka
 - Globen (Avicii Arena): https://sv.wikipedia.org/wiki/Avicii_Arena
 - Ice, Riddarfjärden frozen 2023/24: https://kth.se/blogs/studentblog/2024/01/stockholm-is-frozen
+- Rights, Upphovsrättslagen 24 §: https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/lag-1960729-om-upphovsratt-till-litterara-och_sfs-1960-729/
 - Ice floes in central Stockholm: https://www.svt.se/nyheter/lokalt/stockholm/de-ser-ut-att-hoppa-pa-flytande-isflak-hur-farlig-ar-isen

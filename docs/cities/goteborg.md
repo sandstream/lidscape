@@ -1,5 +1,7 @@
 # Göteborg
 
+Coordinates: 57.709° N, 11.979° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Göteborg point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced.
 
 ## Viewpoint
@@ -29,8 +31,8 @@ Ramberget (Keillers park) on Hisingen, looking south-south-east across Göta äl
 - Local cue: the red-and-white stripes.
 
 ### Barken Viking
-- Height: mast height not found in sources. Length 108 m including bowsprit.
-- Launched: 1 December 1906. Moored at Lilla Bommen since 1951.
+- Height: tallest mast 55.5 m above deck. Length 108 m including bowsprit.
+- Launched: 1 December 1906. In Göteborg harbour since 2 June 1951 (first at Sannegårdshamnen). At Lilla Bommen since 17 September 1957, though not always at the same spot.
 - Position: left, near, in front of Lilla Bommen.
 - Silhouette: white hull; four tall masts with yards (crossbars); thin rigging lines. The masts are taller than the 45 m clearance of Älvsborgsbron.
 - Local cue: four masts beside the striped tower.
@@ -63,6 +65,35 @@ Ramberget (Keillers park) on Hisingen, looking south-south-east across Göta äl
 - Silhouette: two slim portal pylons, each two legs with a crossbeam; long flat deck; two hanging main cables in shallow curves.
 - Local cue: the big suspension bridge at the harbour mouth.
 
+## Traits
+
+- snow: true. In January 2026 heavy snowfall filled the city's snow dumps.
+  The city then dumped hundreds of tonnes of snow in Göta älv at Gullbergsvass,
+  which it may do only after heavy snowfall.
+- adventStars: true. Lit paper stars in windows are a Swedish December custom.
+  Lex.dk calls the star "adventsstjärnan" in Sweden, and Yle says window stars
+  became popular in Sweden in the 1930s.
+- ice: true. Sveriges Radio reported a tug breaking ice on Göta älv in
+  Göteborg (4 February, the page gives no year). A fishing guide says the river
+  is normally ice-free in winter, with ice at times in calm bays. The scene
+  shows floes, not a frozen river.
+
+## Rights
+
+- Freedom of panorama: buildings may be depicted freely, also for commercial
+  use. The statute is upphovsrättslagen (Lag (1960:729) om upphovsrätt till
+  litterära och konstnärliga verk), 24 §: "Byggnader får fritt avbildas."
+- A work of art placed permanently on or at a public place outdoors may also be
+  depicted (24 § first point).
+- The building rule has no time limit, so the death year of an architect does
+  not limit the drawing. This covers Lilla Bommen (Ralph Erskine) and
+  Karlatornet.
+- Two landmarks are not buildings. Barken Viking is a ship, and Älvsborgsbron
+  is a bridge. The statute says "byggnader" and does not state whether these
+  count. I found no source on this.
+- Special protection: 24 § names none. I found no rule on the lighting of these
+  landmarks.
+
 ## Filler
 
 The south bank: mid-rise stone and plaster blocks from around 1900, with hipped roofs, small towers and copper domes on corner buildings. Colours are sandstone, ochre, brick red and grey. Majorna and Masthugget have wooden "landshövdingehus" (stone ground floor, wood above). The near bank on Hisingen is former shipyard land: cranes, warehouses and new glass blocks.
@@ -82,9 +113,15 @@ The south bank: mid-rise stone and plaster blocks from around 1900, with hipped 
 
 - Karlatornet, 246 m, 73 storeys, 2024: https://sv.wikipedia.org/wiki/Karlatornet
 - Lilla Bommen, 86 m, 22 storeys, 1989, stripes: https://sv.wikipedia.org/wiki/Lilla_Bommen_(byggnad)
-- Barken Viking, 1906, 1951, 108 m, masts above 45 m: https://sv.wikipedia.org/wiki/Barken_Viking
+- Barken Viking, 1906, 1951, 1957, 55.5 m mast, 108 m, masts above 45 m: https://sv.wikipedia.org/wiki/Barken_Viking
 - GöteborgsOperan, 32 m, 160 m, 1994: https://sv.wikipedia.org/wiki/G%C3%B6teborgsoperan
 - Skansen Kronan, 33 m, 87 m a.s.l., 1687-1689: https://sv.wikipedia.org/wiki/Skansen_Kronan
 - Skansen Kronan, six-sided, gilded crown: https://en.wikipedia.org/wiki/Skansen_Kronan
 - Masthuggskyrkan, 60 m, 11 m, 127 m, 1914: https://sv.wikipedia.org/wiki/Masthuggskyrkan
 - Älvsborgsbron, 107.6 m, 45 m, 417.6 m, 1966, 1967: https://sv.wikipedia.org/wiki/%C3%84lvsborgsbron
+- Snow, January 2026, snow dumped in Göta älv: https://www.svt.se/nyheter/lokalt/vast/efter-stormen-nu-dumpas-tonvis-med-sno-i-gota-alv
+- Advent star, Swedish name: https://lex.dk/julepynt
+- Window stars popular in Sweden in the 1930s: https://yle.fi/a/3-9990945
+- Ice breaking on Göta älv in Göteborg: https://www.sverigesradio.se/artikel/klas-bryter-is-pa-gota-alv-nar-kylan-kopplar-greppet
+- Göta älv normally ice-free: https://www.stromkast.se/destinationer/gota-alv/
+- Upphovsrättslagen 24 §: https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/lag-1960729-om-upphovsratt-till-litterara-och_sfs-1960-729/

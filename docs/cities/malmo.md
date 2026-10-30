@@ -1,5 +1,7 @@
 # Malmö
 
+Coordinates: 55.599° N, 13.023° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Malmö point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced.
 
 ## Viewpoint
@@ -50,6 +52,30 @@ The pier of Ribersborgs kallbadhus (the cold-bath house on Ribersborg beach), lo
 - Silhouette: low wooden pavilion on stilts with pitched roofs and small towers, at the end of a long pier.
 - Local cue: the bath house standing in the sea.
 
+## Traits
+
+- snow: true. Snow falls mainly from December to March. The snow cover does
+  not stay for long, and some winters have no snow. The scene shows light snow.
+- adventStars: true. The advent star hangs in windows from the first Sunday of
+  Advent and is common in Sweden.
+- ice: true. In several winters at the end of the 1800s, ice covered the
+  harbour and parts of Öresund. The city warns that sea ice in the sound is
+  always unpredictable because of the currents. No recent source found shows
+  the bay at Ribersborg frozen, so the scene shows floes and ice along the
+  shore only.
+
+## Rights
+
+- Rule: Lag (1960:729) om upphovsrätt till litterära och konstnärliga verk,
+  section 24. "Byggnader får fritt avbildas" (buildings may be freely
+  depicted). The rule for buildings has no non-commercial limit.
+- Works of art permanently placed outdoors at a public place may also be
+  depicted. In 2016 the Supreme Court held that a public online database of
+  such artworks infringed the artists' copyright.
+- All five landmarks are buildings. The drawn view may show them by day and at
+  night.
+- Leave out: public sculptures and artworks as recognisable subjects.
+
 ## Filler
 
 The old town (Gamla staden): low merchant houses and half-timbered (korsvirke) houses around Lilla torg, with steep red tile roofs and stepped brick gables. Colours are pale yellow, pink, white and red brick. Västra hamnen: new mid-rise white and grey flat-roofed blocks along the water.
@@ -75,3 +101,9 @@ The old town (Gamla staden): low merchant houses and half-timbered (korsvirke) h
 - S:t Petri kyrka, 1420, 1442, 1890 spire: https://sv.wikipedia.org/wiki/Sankt_Petri_kyrka,_Malm%C3%B6
 - S:t Petri kyrka, city history page: https://malmo.se/Uppleva-och-gora/Arkitektur-och-kulturarv/Malmos-historia/Platser-och-byggnader/Byggnader-A-O/St-Petri-kyrka.html
 - Ribersborgs kallbadhus, 1898, 1902: https://sv.wikipedia.org/wiki/Ribersborgs_kallbadhus
+- Snow, December to March, cover does not stay long, some winters snow-free: https://en.wikipedia.org/wiki/Malm%C3%B6
+- Advent stars, hung in windows at first Advent, common in Sweden: https://sv.wikipedia.org/wiki/Adventsstj%C3%A4rna
+- Ice winters, harbour and parts of Öresund covered by ice: https://malmo.se/Uppleva-och-gora/Konst-och-museer/Bore.html
+- Sea ice always unpredictable: https://malmo.se/Uppleva-och-gora/Idrott-och-traning/Skridskoakning.html
+- Upphovsrättslagen, 24 §: https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/lag-1960729-om-upphovsratt-till-litterara-och_sfs-1960-729/
+- 2016 Supreme Court ruling on public art database: https://en.wikipedia.org/wiki/Freedom_of_panorama

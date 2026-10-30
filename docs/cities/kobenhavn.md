@@ -1,5 +1,7 @@
 # København
 
+Coordinates: 55.681° N, 12.562° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), København point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced.
 
 ## Viewpoint
@@ -57,6 +59,31 @@ The quay in front of Operaen on Holmen, looking west-south-west across Inderhavn
 - Silhouette: round drum ringed with columns; high copper dome, steeper than a half sphere; ribbed; lantern; short gilded spire. Two small bell turrets flank the front.
 - Local cue: the big green dome behind Amalienborg.
 
+## Traits
+
+- snow: true. DMI measured 17 cm of snow in Copenhagen on 6 February 2026, the
+  second deepest since its records there began in 2011. The national normal
+  (1991 to 2020) is 6.9 days with snow cover in January.
+- adventStars: true. Lex.dk says the red and yellow five-pointed paper star
+  with a bulb inside hangs in many windows from 1 December. It came to Denmark
+  from Sweden in the 1930s. Danes call it "julestjernen".
+- ice: true. On 3 February 2026 By & Havn warned that Københavns Havn was
+  covered by a layer of ice that was not safe to walk on.
+
+## Rights
+
+- Freedom of panorama: buildings may be depicted freely, also for commercial
+  use. The statute is ophavsretsloven (lovbekendtgørelse nr. 1093 af 20.
+  august 2023), § 24, stk. 3: "Bygninger må frit afbildes."
+- A work of art placed permanently at a public place or road may also be
+  depicted (§ 24, stk. 2). This does not apply when the work is the main motif
+  and the use is commercial.
+- The building rule has no time limit, so the death year of an architect does
+  not limit the drawing.
+- Special protection: § 24 names none. I found no rule on the lighting of these
+  landmarks. Børsen is under reconstruction after the 2024 fire. The scene
+  draws the historic form.
+
 ## Filler
 
 Christianshavn and Nyhavn: low 18th century townhouses and warehouses, with steep red tile roofs, dormer windows and gable hoists. Colours are ochre, red, pale yellow, pink and blue plaster. Slotsholmen: long copper roofs, turned green. The harbour front has converted brick warehouses with black roofs.
@@ -88,3 +115,9 @@ Christianshavn and Nyhavn: low 18th century townhouses and warehouses, with stee
 - Sankt Nikolaj, 90 m, 35 m, 1591, 1795, 1909: https://da.wikipedia.org/wiki/Nikolaj_Kunsthal
 - Marmorkirken, 31 m, 1894: https://da.wikipedia.org/wiki/Marmorkirken
 - Marmorkirken, 79 m: https://lex.dk/Frederikskirken
+- Snow, 17 cm on 6 February 2026: https://www.thelocal.dk/20260206/stay-at-home-denmark-freezes-with-copenhagen-under-deepest-snow-since-2011
+- Snow cover days, January normal 6.9: https://www.dmi.dk/fileadmin/user_upload/Afrapportering/Maanedssammendrag/Sammendrag_2026_januar.pdf
+- Paper star in windows from 1 December, from Sweden in the 1930s: https://lex.dk/julepynt
+- Ice in Københavns Havn, 3 February 2026: https://www.havne-fronten.dk/2026/by-havn-advarer-smuk-is-i-koebenhavns-havn-men-den-er-ikke-sikker/hele-byen/
+- Ophavsretsloven § 24: https://danskelove.dk/ophavsretsloven/24
+- Ophavsretsloven, LBK nr 1093 af 20/08/2023: https://www.lovguiden.dk/loven/ophavsretsloven/24

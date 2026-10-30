@@ -1,5 +1,7 @@
 # London
 
+Coordinates: 51.502° N, 0.119° W. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), London point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced. Feet are converted at 1 ft = 0.3048 m.
 
 ## Viewpoint
@@ -57,6 +59,31 @@ Alternative card (same bridge, looking west): the Houses of Parliament with Eliz
 - Silhouette: a block that widens toward the top; the top is curved and slightly slanted, like a phone handset.
 - Local cue: top-heavy, wider at the top than at the base.
 
+## Traits
+
+- snow: false. Snow falls on an average of 16 days a year in London, but it is
+  infrequently heavy. No source found gives days with lying snow in central
+  London, so the scene does not show settled snow.
+- adventStars: false. Lit paper stars in windows are a German and Swedish
+  custom. No source found names it as a London custom.
+- ice: false. The last frost fair on the Thames was in 1814. After old London
+  Bridge was replaced and the river was embanked, the river became less likely
+  to freeze.
+
+## Rights
+
+- Rule: Copyright, Designs and Patents Act 1988, section 62. It applies to all
+  buildings, and to sculptures and works of artistic craftsmanship that are
+  permanently in a public place. A graphic work, photograph or film of them
+  does not infringe copyright. Issuing copies to the public does not infringe
+  either. The section has no non-commercial limit.
+- All six landmarks are buildings. The London Eye on the alternative card is
+  permanently in a public place, so section 62(1)(b) covers it if it is not a
+  building.
+- Night: section 62 has no rule for lighting. The drawn view may show the
+  landmarks lit at night.
+- Leave out: nothing found.
+
 ## Filler
 
 The north bank: Victorian and Edwardian stone office blocks with mansard roofs, small domes and pediments. Colours are Portland stone white, grey and buff. The south bank: brick warehouses and post-war concrete blocks, lower and flat-roofed.
@@ -82,3 +109,7 @@ The north bank: Victorian and Edwardian stone office blocks with mansard roofs, 
 - 20 Fenchurch Street, 160 m, April 2014: https://en.wikipedia.org/wiki/20_Fenchurch_Street
 - Elizabeth Tower, 316 ft, 31 May 1859: https://en.wikipedia.org/wiki/Big_Ben
 - London Eye, 135 m, 120 m, March 2000: https://en.wikipedia.org/wiki/London_Eye
+- Snow, 16 days a year: https://en.wikipedia.org/wiki/Climate_of_London
+- Advent stars, German origin, common in Sweden: https://sv.wikipedia.org/wiki/Adventsstj%C3%A4rna
+- Thames, last frost fair 1814, less likely to freeze: https://en.wikipedia.org/wiki/River_Thames_frost_fairs
+- CDPA 1988 section 62: https://www.legislation.gov.uk/ukpga/1988/48/section/62

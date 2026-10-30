@@ -1,5 +1,7 @@
 # Oslo
 
+Coordinates: 59.919° N, 10.748° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Oslo point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced.
 
 ## Viewpoint
@@ -57,6 +59,32 @@ The harbour basin south of Akershus, on the ferry route to Hovedøya, looking no
 - Silhouette: thin steel in-run that rises at an angle, then juts out past its support like a diving board; a slim mast at the top.
 - Local cue: the ski jump on the skyline.
 
+## Traits
+
+- snow: true. Blindern station data show snow on Christmas Eve in two of every
+  three years since 1940.
+- adventStars: true. Store norske leksikon names the advent star in the window
+  as one of the most common Advent symbols.
+- ice: true. Bjørvika froze over every winter until well past the middle of the
+  1800s. In the cold winter of 2009/10 the fjord froze in many places, and ice
+  and currents apparently pried granite blocks loose at the Opera. The scene
+  shows floes along the quay, and wider cover only with a lot of snow.
+
+## Rights
+
+- Freedom of panorama: buildings may be depicted freely, also for commercial
+  use. The statute is åndsverkloven (Lov om opphavsrett til åndsverk mv.,
+  LOV-2018-06-15-40), § 31: "Byggverk kan fritt avbildes."
+- A work of art placed permanently in a public place may also be depicted. This
+  does not apply when the work is clearly the main motif and the use is
+  commercial.
+- Copyright lasts 70 years after the author's death (§ 11). § 31 frees
+  buildings, so the death year of an architect does not limit the drawing. This
+  also covers the recent buildings in the view: the Opera, MUNCH and the
+  rebuilt Holmenkollbakken.
+- Special protection: § 31 names none. I found no rule on the lighting of these
+  landmarks.
+
 ## Filler
 
 The centre behind the harbour: mid-rise stone and plaster blocks from around 1900, with hipped roofs and some copper domes. Colours are ochre, cream, pale grey and brick red. Bjørvika: tall, thin modern blocks with gaps between them (the Barcode).
@@ -88,3 +116,8 @@ The centre behind the harbour: mid-rise stone and plaster blocks from around 190
 - Holmenkollbakken, about 65 m: https://snl.no/Holmenkollbakken
 - Holmenkollbakken, 69 m, 418 m a.s.l.: https://jdsa.eu/holmenkollen-ski-jump-moves-to-final-construction-phase/
 - Holmenkollbakken, 58 m: https://manchesterhistory.net/architecture/2000/holmenkollbakken.html
+- Snow on Christmas Eve, Blindern since 1940: https://www.thelocal.no/20251208/will-oslo-get-a-white-christmas-this-year
+- Advent star in the window: https://snl.no/advent
+- Bjørvika frozen until past the mid-1800s: https://lokalhistoriewiki.no/wiki/Bj%C3%B8rvika_(Oslo)
+- Ice in 2009/10, granite blocks at the Opera: https://www.newsinenglish.no/2010/03/18/ice-hurts-opera-house-and-people/
+- Åndsverkloven § 31 and § 11: https://lovdata.no/dokument/NL/lov/2018-06-15-40
