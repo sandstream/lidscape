@@ -27,8 +27,11 @@ cp "$ROOT/screensaver/index.html" "$WEB/index.html"
 bun build --target=browser --format=iife --outfile="$WEB/saver.js" "$ROOT/src/saver-main.js"
 node "$ROOT/screensaver/generate-thumbnail.mjs" "$WEB/index.html" "$CONTENTS/Resources"
 node "$ROOT/screensaver/options.mjs" > "$CONTENTS/Resources/options.json"
-xcrun swiftc -O "$ROOT/bridge/LidBridge.swift" -o "$SENSOR_APP/Contents/MacOS/lid-bridge"
-xcrun swiftc -emit-library -O -module-name LidscapeSaver -framework AppKit -framework ScreenSaver -framework WebKit \
+SWIFT_TARGET=$(xcrun swiftc -print-target-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["unversionedTriple"])')
+SENSOR_MINIMUM=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$SENSOR_APP/Contents/Info.plist")
+SAVER_MINIMUM=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$CONTENTS/Info.plist")
+xcrun swiftc -target "${SWIFT_TARGET}${SENSOR_MINIMUM}" -O "$ROOT/bridge/LidBridge.swift" -o "$SENSOR_APP/Contents/MacOS/lid-bridge"
+xcrun swiftc -target "${SWIFT_TARGET}${SAVER_MINIMUM}" -emit-library -O -module-name LidscapeSaver -framework AppKit -framework ScreenSaver -framework WebKit \
   "$ROOT/screensaver/LidscapeSaver.swift" -o "$CONTENTS/MacOS/LidscapeSaver"
 IDENTITY=${APPLE_SIGNING_IDENTITY:--}
 if [ "$IDENTITY" = '-' ]; then
