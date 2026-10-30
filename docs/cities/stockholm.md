@@ -66,6 +66,13 @@ This matches the layout in `src/cities/stockholm.js`.
 - Silhouette: white sphere with a visible steel grid, on a low arena base.
 - Local cue: the white ball itself.
 
+### Kaknästornet
+- Height: 155 m; about 170 m with the mast. 34 floors.
+- Year: built from 1963, inaugurated 12 May 1967. Architects Hans Borgström and Bengt Lindroos.
+- Position: right, far. It stands on Gärdet, north-east of Skeppsholmen, so from this viewpoint it is behind the viewer. The scene puts it north of Stadshuset, as drawn Stockholm skylines include it.
+- Silhouette: tall square concrete shaft, width ≈ 1/12 of the height to the roof; the head with the restaurant, café and antenna platforms is turned 45 degrees to the shaft, so it reads wider; lattice mast on the roof.
+- Local cue: the pale needle with the thick head, the tallest thing on the skyline.
+
 ## Traits
 
 - snow: true. Snow falls and settles in Stockholm winters.
@@ -106,5 +113,6 @@ Gamla stan: narrow 17th and 18th century merchant houses, tall and thin. Roofs a
 - Kungliga slottet, 1754, wing lengths: https://sv.wikipedia.org/wiki/Stockholms_slott
 - Katarina kyrka, 72 m, 1695, 1723, 1990, 1995, four corner towers: https://sv.wikipedia.org/wiki/Katarina_kyrka
 - Globen (Avicii Arena): https://sv.wikipedia.org/wiki/Avicii_Arena
+- Kaknästornet, 155 m, 170 m with mast, 1963, 12 May 1967, turned head, location: https://sv.wikipedia.org/wiki/Kaknästornet
 - Ice, Riddarfjärden frozen 2023/24: https://kth.se/blogs/studentblog/2024/01/stockholm-is-frozen
 - Ice floes in central Stockholm: https://www.svt.se/nyheter/lokalt/stockholm/de-ser-ut-att-hoppa-pa-flytande-isflak-hur-farlig-ar-isen
