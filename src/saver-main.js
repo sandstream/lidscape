@@ -104,6 +104,7 @@ function frame(now) {
   const dt = Math.min(clock.getDelta(), 0.1)
   const target = lid.connected && lid.progress != null ? lid.progress : 1
   progress += (target - progress) * (1 - Math.exp(-dt * 6))
+  post.update(settings, progress)
   city.update(progress, 1, clock.elapsedTime)
   if (!lowQuality) city.renderReflection(renderer, camera)
   composer.render()
