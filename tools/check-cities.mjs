@@ -14,7 +14,7 @@ import { layoutCities, layoutCapitals, mapPoint, MAP_WIDTH, MAP_HEIGHT } from '.
 // Keep in step with BUILDERS in src/city.js.
 const ITEM_TYPES = ['house', 'tower', 'hill', 'arcade', 'lamp', 'outline']
 // Keep in step with EFFECTS in src/effects.js and POST_STEPS in src/post.js.
-const POST_STEPS = ['tiltShift', 'grade']
+const POST_STEPS = ['tiltShift', 'grade', 'paint']
 const EFFECT_TYPES = ['snowfall', 'snowcaps', 'stringLights', 'windowStars', 'ice', 'trees', 'windowGarlands']
 const HEX = /^#[0-9a-f]{6}$/i
 const errors = []
@@ -184,6 +184,8 @@ for (const theme of THEMES) {
   if (theme.post?.tiltShift && !theme.howTo) fail(at, 'tiltShift follows the pointer: say so in howTo')
   const ts = theme.post?.tiltShift
   if (ts && !(theme.settings ?? []).some((st) => st.id === ts.setting)) fail(at, `tiltShift.setting ${ts.setting} is not in the theme's settings`)
+  const pt = theme.post?.paint
+  if (pt?.setting && !(theme.settings ?? []).some((st) => st.id === pt.setting)) fail(at, `paint.setting ${pt.setting} is not in the theme's settings`)
 }
 
 // Variants: an occasion over any theme, limited by the city's traits.
