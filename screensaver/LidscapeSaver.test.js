@@ -529,3 +529,134 @@ view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+for (const closeMode of ['tcp', 'websocket']) {
+  test(`the screen saver reconnects after ${closeMode} sensor disconnect`, {
+    skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+    timeout: 30000,
+  }, async t => {
+    const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-reconnect-test-'))
+    const server = createServer()
+    const sockets = new Set()
+    let child
+    let firstSocket
+    let secondSocket
+    let connections = 0
+    let cleared = false
+    let dropSent = false
+    let secondSent = false
+    let output = ''
+    let errorOutput = ''
+    const stopChild = () => {
+      if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
+    t.signal.addEventListener('abort', stopChild, { once: true })
+    const sendText = (socket, message) => {
+      const payload = Buffer.from(message)
+      socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]))
+    }
+    const sendSecond = () => {
+      if (cleared && secondSocket && !secondSent) {
+        secondSent = true
+        sendText(secondSocket, '{"angle":145}')
+      }
+    }
+    server.on('upgrade', (request, socket) => {
+      connections++
+      sockets.add(socket)
+      socket.on('close', () => sockets.delete(socket))
+      socket.on('error', () => {})
+      socket.on('end', () => socket.end())
+      const key = request.headers['sec-websocket-key']
+      const accept = createHash('sha1')
+        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest('base64')
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+      if (connections === 1) {
+        firstSocket = socket
+        sendText(socket, '{"angle":120}')
+      } else if (connections === 2) {
+        secondSocket = socket
+        sendSecond()
+      } else {
+        socket.destroy()
+      }
+    })
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', resolve)
+      })
+      const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+      const source = original.replace('ws://127.0.0.1:8787', 'ws://127.0.0.1:\\(CommandLine.arguments[1])')
+      if (source === original) throw new Error('The sensor URL seam was not found')
+      const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseSensorReconnect() {
+        sensorActive = true
+        sensorRetryDelay = 0.25
+        connectSensor()
+        guard let firstTask = sensorTask else { preconditionFailure("Initial sensor task is missing") }
+        let deadline = Date().addingTimeInterval(12)
+        func waitFor(_ predicate: () -> Bool, _ message: String) {
+            while !predicate() && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            precondition(predicate(), message)
+        }
+        waitFor({ lastLidAngle == 120 }, "The first sensor angle did not arrive")
+        FileHandle.standardOutput.write(Data("first-angle\\n".utf8))
+        waitFor({ lastLidAngle == nil }, "Disconnect did not clear the sensor angle")
+        FileHandle.standardOutput.write(Data("angle-cleared\\n".utf8))
+        waitFor({ lastLidAngle == 145 }, "The reconnected sensor angle did not arrive")
+        precondition(sensorTask != nil && sensorTask !== firstTask, "Reconnect must create a new sensor task")
+        FileHandle.standardOutput.write(Data("reconnected\\n".utf8))
+        stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseSensorReconnect()
+`
+      const file = join(dir, 'reconnect.swift')
+      const executable = join(dir, 'reconnect')
+      await writeFile(file, testSource)
+      execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+        '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+      child = spawn(executable, [String(server.address().port)])
+      child.stdout.on('data', chunk => {
+        output += chunk
+        if (!dropSent && output.includes('first-angle')) {
+          dropSent = true
+          if (closeMode === 'websocket') {
+            firstSocket.write(Buffer.from([0x88, 0x02, 0x03, 0xe8]))
+          } else {
+            firstSocket.end()
+          }
+        }
+        if (!cleared && output.includes('angle-cleared')) {
+          cleared = true
+          sendSecond()
+        }
+      })
+      child.stderr.on('data', chunk => { errorOutput += chunk })
+      const status = await new Promise((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      if (status !== 0) throw new Error(`Sensor reconnect failed (${status}): ${errorOutput}`)
+      if (connections !== 2 || !dropSent || !cleared || !secondSent || !output.includes('reconnected')) {
+        throw new Error(`Expected one reconnect: mode=${closeMode}, connections=${connections}, output=${output}`)
+      }
+    } finally {
+      t.signal.removeEventListener('abort', stopChild)
+      const childClosed = child?.exitCode === null && child.signalCode === null
+        ? new Promise(resolve => child.once('close', resolve))
+        : null
+      stopChild()
+      if (childClosed) await childClosed
+      for (const socket of sockets) socket.destroy()
+      await new Promise(resolve => server.close(resolve))
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+}
