@@ -1,6 +1,7 @@
 // How to use Lidscape: a window that opens the first time someone sees a theme
 // or a variant. It lists the general controls and the theme's and variant's own
-// lines (howTo in src/themes and src/variants), and a part about the app. "Got it" remembers that this
+// lines (howTo in src/themes and src/variants). The i in the top left corner
+// opens a second window about the app. "Got it" remembers that this
 // theme and variant have been seen; the Help button opens the window again.
 
 import { local } from './lang/index.js'
@@ -46,9 +47,10 @@ export function setupHowTo({ t, lang, theme, variant }) {
     dialog.close()
   })
 
-  // About: what Lidscape is, how to add to it, and how to build your own.
+  // About, behind the i in the top left corner: what Lidscape is, how to add
+  // to it, and how to build your own.
   const about = document.getElementById('about')
-  about.querySelector('h3').textContent = t.aboutTitle
+  about.querySelector('h2').textContent = t.aboutTitle
   about.querySelector('.about-text').textContent = t.aboutText
   about.querySelector('.about-contribute span').textContent = t.aboutContribute
   about.querySelector('.about-contribute a').textContent = t.aboutContributeLink
@@ -61,6 +63,15 @@ export function setupHowTo({ t, lang, theme, variant }) {
       .then((v) => (about.querySelector('.about-version').textContent = t.aboutVersion.replace('{version}', v)))
       .catch(() => {})
   }
+
+  const aboutBtn = document.getElementById('about-btn')
+  aboutBtn.setAttribute('aria-label', t.aboutTitle)
+  aboutBtn.title = t.aboutTitle
+  aboutBtn.classList.toggle('in-app', !!tauri)
+  aboutBtn.addEventListener('click', () => about.showModal())
+  const close = about.querySelector(':scope > button')
+  close.textContent = t.close
+  close.addEventListener('click', () => about.close())
 
   const help = document.getElementById('help-btn')
   help.textContent = t.help

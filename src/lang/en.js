@@ -63,5 +63,6 @@ export const en = {
     aboutBuild: 'Build your own: get the code and ask an AI coding agent, such as Claude Code, to "Build Gothenburg". The agent follows AGENTS.md in the code, and you can keep the result for yourself or send it to Lidscape.',
     aboutSource: 'The code on GitHub',
     aboutVersion: 'Version {version}',
+    close: 'Close',
   },
 }
