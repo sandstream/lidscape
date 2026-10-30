@@ -212,13 +212,18 @@ This is a gap for all movements, also for Pop-up and the screen saver shuffle.
 | M4 | Codex | Assemble (with Bricks), Crumble (with Blocks), then Mobile |
 | M5 | Claude | Tune half-lives and g on real hardware, screenshots |
 
+## Decisions, 30 October 2026
+
+1. Movement is a fourth choice for the user. The first item in the pop-up is
+   the style default. (Peter)
+2. Claude sets the order. Push puppet comes after screen saver phase 1. The
+   prototype (M1) is made now in a separate worktree, because it changes no
+   file that Codex edits.
+3. We test cities as push puppets with automatic bands in M1, on one
+   Stockholm landmark and on a row of houses. If wide buildings look strange,
+   cities keep Pop-up and only figures get Push puppet.
+
 ## Open questions to Peter
 
-1. Is "Movement" a fourth choice for the user, or only a part of the style?
-   The recommendation is a fourth choice with the style default first.
-4. Blocks is a new style next to Bricks. Is the style order now Monet,
+1. Blocks is a new style next to Bricks. Is the style order now Monet,
    Bricks, Blocks, Van Gogh, papercut?
-2. Push puppet in the first version, or after the screen saver?
-3. Must a motif that is not a figure (a city) also work as a push puppet? The
-   automatic bands make it possible. The result can look strange on wide
-   buildings.
