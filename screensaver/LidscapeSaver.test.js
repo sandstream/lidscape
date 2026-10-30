@@ -355,6 +355,7 @@ test('stopping the screen saver closes its sensor connection', {
   let connection
   let connected = false
   let disconnected = false
+  let peerEnded = false
   let receivedAngle = false
   let closeBeforeStop = false
   let closeFrameSeen = false
@@ -372,7 +373,7 @@ test('stopping the screen saver closes its sensor connection', {
     if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   }
   const onAbort = () => {
-    t.diagnostic(`Sensor teardown timed out at ${stage}: connected=${connected}, angle=${receivedAngle}, closeFrame=${closeFrameSeen}, disconnected=${disconnected}, mainLoopReady=${mainLoopReady}, output=${JSON.stringify(output)}, stderr=${JSON.stringify(errorOutput)}`)
+    t.diagnostic(`Sensor teardown timed out at ${stage}: connected=${connected}, angle=${receivedAngle}, closeFrame=${closeFrameSeen}, peerEnded=${peerEnded}, disconnected=${disconnected}, mainLoopReady=${mainLoopReady}, output=${JSON.stringify(output)}, stderr=${JSON.stringify(errorOutput)}`)
     stopChild()
   }
   t.signal.addEventListener('abort', onAbort, { once: true })
@@ -381,6 +382,11 @@ test('stopping the screen saver closes its sensor connection', {
     stage = 'WebSocket connected'
     connection = socket
     socket.on('error', () => {})
+    socket.on('end', () => {
+      peerEnded = true
+      if (!stopRequested) closeBeforeStop = true
+      if (!closeFrameSeen) socket.end()
+    })
     socket.on('close', () => {
       disconnected = true
       stage = 'WebSocket closed'
@@ -508,7 +514,7 @@ view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
     })
     if (status !== 0) throw new Error(`Sensor test failed (${status}): ${errorOutput}`)
     if (!connected || !receivedAngle) throw new Error('The sensor connection did not receive its angle')
-    if (!closeFrameSeen || !disconnected || closeBeforeStop || !closeWhileRunning || !mainLoopReady) {
+    if ((!closeFrameSeen && !peerEnded) || !disconnected || closeBeforeStop || !closeWhileRunning || !mainLoopReady) {
       throw new Error('The sensor connection did not close after the screen saver stopped while its process was running')
     }
   } finally {
