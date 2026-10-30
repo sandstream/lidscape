@@ -27,7 +27,7 @@ struct ActiveWallpaper: @unchecked Sendable {
     /// The XPC connection that most recently acquired this surface. UUID-less invalidation
     /// fallback uses it to reject stale history from an older connection.
     var acquisitionOwner: UUID
-    /// Changes when this instance loses or regains hosting.
+    /// Changes when this instance loses or regains hosting or changes owner.
     var hostingGeneration = UUID()
     /// Last effective policy requested for this surface. Renderer policy changes are
     /// asynchronous, so lifecycle logging reports this value as requested, not observed.
@@ -413,7 +413,7 @@ final class WallpaperState: Sendable {
         let changed = lock.withLock { state -> Bool in
             guard var context = state.contexts[key] else { return false }
             let changed = !context.isHosted
-            if changed {
+            if changed || context.acquisitionOwner != owner {
                 context.hostingGeneration = UUID()
             }
             context.isHosted = true

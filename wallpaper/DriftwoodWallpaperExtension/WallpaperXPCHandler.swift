@@ -681,6 +681,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                 for: key,
                 owner: acquisitionOwner
             )
+            let scheduleHandoffAfterReply = existing.isReady
+                && (resumedHosting || existing.acquisitionOwner != acquisitionOwner)
+            func replyReusedContext() {
+                reply(replyObj, nil)
+                if scheduleHandoffAfterReply {
+                    scheduleReplacementHandoffs(for: key)
+                }
+            }
             if isPreview {
                 markPreviewActive(for: key)
             }
@@ -688,9 +696,6 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                 WallpaperPrefs.shared.applyCurrentState(to: key)
                 WallpaperPrefs.shared.refreshActiveState()
                 WallpaperState.shared.logLifecycleTelemetry("surface re-acquired")
-                if existing.isReady {
-                    scheduleReplacementHandoffs(for: key)
-                }
             }
 
             let assignmentAlreadyApplied =
@@ -709,12 +714,12 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                         rendererID: renderer.debugID
                     )
                 }
-                reply(replyObj, nil)
+                replyReusedContext()
                 return
             }
             guard let videoURL else {
                 traceLog("  [acquire] no render source for new choice, keeping current")
-                reply(replyObj, nil)
+                replyReusedContext()
                 return
             }
             // One path for every combination. The surface builds the replacement on its
@@ -735,7 +740,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                         )
                     }
                     extensionLog("  [acquire] Metal scene failed to load: \(error)")
-                    reply(replyObj, nil)
+                    replyReusedContext()
                     return
                 }
             } else {
@@ -765,7 +770,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                     "  [acquire] build already in flight for display "
                         + "\(key.displayID) → serving the current surface"
                 )
-                reply(replyObj, nil)
+                replyReusedContext()
                 return
             }
 
@@ -795,7 +800,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
                     }
                 }
             }
-            reply(replyObj, nil)
+            replyReusedContext()
             if !isMetalScene {
                 let w = Int(geometry.snapshotPixelSize.width)
                 let h = Int(geometry.snapshotPixelSize.height)

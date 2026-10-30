@@ -5,11 +5,11 @@ enum PlaybackPolicy: Equatable, Sendable { case full, paused }
 final class WallpaperRenderer: @unchecked Sendable { let debugID = 1 }
 final class WallpaperSurface: @unchecked Sendable {
     var renderer: WallpaperRenderer?
-    var onStopped: (@Sendable () -> Void)?
+    var stopCount = 0
     func refreshVideoSource(_ url: URL) {}
     func applyPolicy(_ policy: PlaybackPolicy, animated: Bool = false) {}
     func settle() {}
-    func invalidate(_ completion: @escaping @Sendable () -> Void) { onStopped = completion }
+    func stop() { stopCount += 1 }
 }
 final class VideoLibrary: @unchecked Sendable {
     static let shared = VideoLibrary()
@@ -45,15 +45,15 @@ struct WallpaperStateHandoffCheck {
         state.installContext(ActiveWallpaper(caContext: replacementContext, contextId: 2, rootLayer: CALayer(), surface: replacementSurface, displayID: 42, isPreview: false, acquisitionOwner: owner), for: replacementKey)
         precondition(!state.markReady(for: replacementKey, surface: oldSurface))
         precondition(state.markReady(for: replacementKey, surface: replacementSurface))
-        precondition(state.pauseUnhostedSurface(for: oldKey))
+        precondition(state.pauseUnhostedSurface(for: oldKey, owner: owner))
         let lateKey = DisplayKey(displayID: 42, surfaceUUID: UUID())
         let lateSurface = WallpaperSurface()
         state.installContext(ActiveWallpaper(caContext: TestRemoteContext(), contextId: 6, rootLayer: CALayer(), surface: lateSurface, displayID: 42, isPreview: false, acquisitionOwner: owner), for: lateKey)
-        precondition(state.pauseUnhostedSurface(for: lateKey))
+        precondition(state.pauseUnhostedSurface(for: lateKey, owner: owner))
         precondition(state.markReady(for: lateKey, surface: lateSurface), "the first frame may arrive while unhosted")
         precondition(state.restoreHosting(for: lateKey, owner: owner))
         precondition(state.readyReplacements(for: oldKey).contains { $0.0 == lateKey })
-        precondition(state.pauseUnhostedSurface(for: lateKey))
+        precondition(state.pauseUnhostedSurface(for: lateKey, owner: owner))
         let previewKey = DisplayKey(displayID: 42, surfaceUUID: UUID())
         let previewSurface = WallpaperSurface()
         state.installContext(ActiveWallpaper(caContext: TestRemoteContext(), contextId: 4, rootLayer: CALayer(), surface: previewSurface, displayID: 42, isPreview: true, acquisitionOwner: owner), for: previewKey)
@@ -66,23 +66,21 @@ struct WallpaperStateHandoffCheck {
         precondition(!state.readyReplacements(for: oldKey).contains { $0.0 == otherKey })
         let generation = state.readyReplacements(for: oldKey).first!.1
         precondition(state.isReadyReplacement(replacementKey, generation: generation, for: oldKey))
-        precondition(state.pauseUnhostedSurface(for: replacementKey))
+        precondition(state.pauseUnhostedSurface(for: replacementKey, owner: owner))
         precondition(state.restoreHosting(for: replacementKey, owner: owner))
         precondition(!state.isReadyReplacement(replacementKey, generation: generation, for: oldKey))
         precondition(state.restoreHosting(for: oldKey, owner: owner))
         precondition(state.readyReplacements(for: oldKey).isEmpty)
-        precondition(state.pauseUnhostedSurface(for: oldKey))
+        precondition(state.pauseUnhostedSurface(for: oldKey, owner: owner))
         precondition(state.tearDownContext(for: oldKey))
-        precondition(oldContext.invalidations == 0)
+        precondition(oldSurface.stopCount == 1 && oldContext.invalidations == 1)
         let newerSurface = WallpaperSurface()
         let newerContext = TestRemoteContext()
         state.installContext(ActiveWallpaper(caContext: newerContext, contextId: 3, rootLayer: CALayer(), surface: newerSurface, displayID: 42, isPreview: false, acquisitionOwner: owner), for: oldKey)
         precondition(!state.markReady(for: oldKey, surface: oldSurface), "a stale first frame cannot mark the new surface ready")
         precondition(state.context(for: oldKey)?.isReady == false)
-        oldSurface.onStopped!()
-        RenderQueue.serial.sync {}
         precondition(oldContext.invalidations == 1 && newerContext.invalidations == 0)
         precondition(state.context(for: oldKey)?.surface === newerSurface)
-        print("WallpaperState handoff generations and asynchronous teardown: OK")
+        print("WallpaperState handoff generations and teardown: OK")
     }
 }
