@@ -28,6 +28,8 @@ private let oldSaverBundleID = "se.sandstream.lidscape.saver"
 private let saverLog = Logger(subsystem: saverBundleID, category: "screen-saver")
 private var sensorLaunchRequestedAt: Date?
 private let sensorLaunchRetryInterval: TimeInterval = 5
+private let firstFrameTimeout: TimeInterval = 15
+private let stalledFrameTimeout: TimeInterval = 5
 
 private struct PageRetryState {
     private(set) var delay: TimeInterval = 1
@@ -82,6 +84,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     private var pageRetry = PageRetryState()
     private var pageURL: URL?
     private var resourcesURL: URL?
+    private var pageLoadStartedAt: Date?
     private var sensorSession: URLSession?
     private var sensorTask: URLSessionWebSocketTask?
     private var sensorHeartbeatTimer: Timer?
@@ -261,6 +264,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         addSubview(view)
         addSubview(fallback, positioned: .above, relativeTo: view)
         updateFallback()
+        pageLoadStartedAt = Date()
         view.loadFileURL(page, allowingReadAccessTo: resources)
         if !isPreview { startSensor(resources: resources) }
     }
@@ -272,8 +276,14 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "lidscapeFrame", let webView, message.webView === webView else { return }
-        let now = Date()
-        if lastRenderSeen == nil { saverLog.notice("first rendered frame") }
+        noteRenderedFrame(now: Date())
+    }
+
+    private func noteRenderedFrame(now: Date) {
+        if lastRenderSeen == nil {
+            saverLog.notice("first rendered frame")
+            pageRetry.cancel()
+        }
         if lastRenderSeen.map({ now.timeIntervalSince($0) < 0.75 }) != true {
             renderStartedAt = now
         }
@@ -291,6 +301,12 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             saverLog.debug("fallback visible=\(shouldShow)")
             fallbackView?.isHidden = !shouldShow
         }
+        guard animationActive, !showsThumbnail, let view = webView else { return }
+        let lastSignal = lastRenderSeen ?? pageLoadStartedAt
+        let timeout = lastRenderSeen == nil ? firstFrameTimeout : stalledFrameTimeout
+        if let lastSignal, now.timeIntervalSince(lastSignal) >= timeout {
+            schedulePageReload(view)
+        }
     }
 
     override func stopAnimation() {
@@ -303,6 +319,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         pageRetry.markHealthy()
         pageURL = nil
         resourcesURL = nil
+        pageLoadStartedAt = nil
         fallbackView?.removeFromSuperview()
         fallbackView = nil
         webView?.evaluateJavaScript("window.lidscapeSaver?.stop()") { _, _ in }
@@ -511,12 +528,13 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         guard webView === view, pageURL != nil, resourcesURL != nil else { return }
         lastRenderSeen = nil
         renderStartedAt = nil
-        updateFallback()
+        fallbackView?.isHidden = false
         guard let retry = pageRetry.schedule() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay) { [weak self, weak view] in
             guard let self, let view, self.webView === view,
                   let page = self.pageURL, let resources = self.resourcesURL,
                   self.pageRetry.begin(generation: retry.generation) else { return }
+            self.pageLoadStartedAt = Date()
             view.loadFileURL(page, allowingReadAccessTo: resources)
         }
     }

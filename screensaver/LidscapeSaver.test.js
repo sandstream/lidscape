@@ -259,3 +259,86 @@ preview.exercisePreviewResize()
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('a stalled live screen saver retries without a reload storm', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-stall-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const source = original
+      .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeStallAfter(delay: retry.delay)')
+      .replace('            view.loadFileURL(page, allowingReadAccessTo: resources)', '            fakeStallLoad(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      throw new Error('The retry test seams were not found')
+    }
+    const testSource = `${source}
+private var scheduledStall: [(TimeInterval, () -> Void)] = []
+private var stallReloads = 0
+private func fakeStallAfter(delay: TimeInterval, perform: @escaping () -> Void) {
+    scheduledStall.append((delay, perform))
+}
+private func fakeStallLoad(view: WKWebView, page: URL, resources: URL) { stallReloads += 1 }
+extension LidscapeSaverView {
+    func exerciseStalledFrames() {
+        let content = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        webView = content
+        fallbackView = NSImageView()
+        fallbackView?.isHidden = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        animationActive = true
+        lastRenderSeen = Date().addingTimeInterval(-10)
+        renderStartedAt = Date().addingTimeInterval(-20)
+        updateFallback()
+        precondition(fallbackView?.isHidden == false, "A stalled view must show its poster")
+        precondition(scheduledStall.count == 1 && scheduledStall[0].0 == 1,
+                     "A stalled live page must schedule one reload")
+        for _ in 0..<10 { updateFallback() }
+        precondition(scheduledStall.count == 1, "Repeated timer ticks must not schedule duplicate reloads")
+        noteRenderedFrame(now: Date())
+        scheduledStall.removeFirst().1()
+        precondition(stallReloads == 0, "A resumed frame must cancel the pending reload")
+        lastRenderSeen = Date().addingTimeInterval(-10)
+        updateFallback()
+        precondition(scheduledStall.count == 1 && scheduledStall[0].0 == 2, "The next failure must use backoff")
+        scheduledStall.removeFirst().1()
+        precondition(stallReloads == 1, "The stalled page must reload")
+        updateFallback()
+        precondition(scheduledStall.isEmpty, "A new page needs time to render its first frame")
+        pageLoadStartedAt = Date().addingTimeInterval(-16)
+        updateFallback()
+        precondition(scheduledStall.count == 1 && scheduledStall[0].0 == 4,
+                     "A page with no first frame must retry with backoff")
+        stopAnimation()
+        scheduledStall.removeFirst().1()
+        precondition(stallReloads == 1, "Stopping must cancel the scheduled reload")
+    }
+    func exerciseStalledPreview() {
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        fallbackView = NSImageView()
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        animationActive = true
+        lastRenderSeen = Date().addingTimeInterval(-10)
+        updateFallback()
+        precondition(scheduledStall.isEmpty, "A preview must not schedule a reload")
+        stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseStalledFrames()
+let preview = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: true)!
+preview.exerciseStalledPreview()
+`
+    const file = join(dir, 'stall.swift')
+    const executable = join(dir, 'stall')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

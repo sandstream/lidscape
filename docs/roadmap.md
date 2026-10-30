@@ -31,6 +31,7 @@ The world map is available only in the app. The screen saver shows a city.
 - The screen saver starts a separate bundled background app to read the lid. A direct child inherits the system host's sandbox and cannot open the HID sensor. The background app sends the angle over localhost, and the screen saver's native view sends it to the picture.
 - The background app starts only when the native view cannot connect. It exits after 20 seconds without a screen saver heartbeat or when its bundle is removed.
 - The sensor helper checks for the lid sensor only at startup. Test recovery on a real MacBook when the sensor appears later.
+- One locked Mac had 18 connections from the screen saver host to the sensor helper. Check that they close after the screen saver stops.
 - WebKit needs a private window-occlusion override in the legacy screen saver host. The call is guarded, and the native poster stays visible if live rendering stops.
 - Test physical lid closing and wake-up on a real Mac. Apple reports [legacy screen saver faults](https://developer.apple.com/forums/thread/787444) on secondary displays.
 - The [Mac Lock Screen](https://support.apple.com/en-ie/guide/mac-help/mchl8e8b6a34/27/mac/27) shows the selected screen saver after inactivity. Verify Lidscape there during the full-screen test.

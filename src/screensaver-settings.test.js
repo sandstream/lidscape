@@ -4,7 +4,7 @@ import { withPage } from './browser.test-support.js'
 
 test('Mac app installs, opens settings, and removes the screen saver from the map menu', { timeout: 120000 }, async () => {
   await withPage(5192, '?view=map&quality=low&lang=sv', () => {
-    window.__saverState = { installed: false, available: true }
+    window.__saverState = { installed: false, available: true, matchesSource: null }
     window.__saverCalls = []
     window.__TAURI__ = { core: { invoke: async (name) => {
       window.__saverCalls.push(name)
@@ -12,12 +12,12 @@ test('Mac app installs, opens settings, and removes the screen saver from the ma
       if (window.__failSaver && name === 'screensaver_status') throw new Error('Test failure')
       if (name === 'install_screensaver' && window.__unsignedSource) throw new Error('LIDSCAPE_SAVER_SOURCE_UNVERIFIED')
       if (name === 'install_screensaver') {
-        setTimeout(() => { window.__saverState.installed = true }, 100)
+        setTimeout(() => { window.__saverState.installed = true; window.__saverState.matchesSource = true }, 100)
         return { ...structuredClone(window.__saverState), installationPending: true }
       }
       if (name === 'uninstall_screensaver' && window.__partialSaver) throw new Error('Trash failed. LIDSCAPE_SAVER_PARTIAL_REMOVAL')
       if (name === 'uninstall_screensaver' && window.__unsignedSaver) throw new Error('LIDSCAPE_SAVER_UNVERIFIED')
-      if (name === 'uninstall_screensaver') window.__saverState.installed = false
+      if (name === 'uninstall_screensaver') { window.__saverState.installed = false; window.__saverState.matchesSource = null }
       return structuredClone(window.__saverState)
     } } }
   }, async (page, errors) => {
@@ -60,6 +60,45 @@ test('Mac app installs, opens settings, and removes the screen saver from the ma
     await page.getByText('Installerad. Öppna Mac-inställningar, välj Skärmsläckare och Lidscape. Välj bild med Alternativ.').waitFor()
     await page.locator('#saver-install').click()
     await page.getByText(/En annan version har redan flyttats till Papperskorgen/).waitFor()
+    assert.deepEqual(errors, [])
+  })
+})
+
+
+test('the Mac app offers reinstall, verifies an update, and reports cancellation', { timeout: 120000 }, async () => {
+  await withPage(5193, '?view=map&quality=low&lang=sv', () => {
+    window.__saverState = { installed: true, available: true, matchesSource: false }
+    window.__saverCalls = []
+    const originalTimeout = window.setTimeout
+    window.setTimeout = (callback, delay, ...args) => originalTimeout(callback, delay === 1000 ? 10 : delay, ...args)
+    window.__TAURI__ = { core: { invoke: async (name) => {
+      if (name === 'check_update') return null
+      window.__saverCalls.push(name)
+      if (name === 'install_screensaver') {
+        if (!window.__cancelSaver && window.__saverState.matchesSource === false) setTimeout(() => { window.__saverState.matchesSource = true }, 100)
+        return { ...structuredClone(window.__saverState), installationPending: true }
+      }
+      return structuredClone(window.__saverState)
+    } } }
+  }, async (page, errors) => {
+    if (await page.locator('#howto').evaluate((dialog) => dialog.open)) await page.locator('#howto button').click()
+    await page.locator('#map-saver').click()
+    await page.getByText('Appen innehåller en annan version. Välj Installera om för att uppdatera.').waitFor()
+    assert.equal(await page.locator('#saver-install').textContent(), 'Ta bort')
+    await page.locator('#saver-reinstall').click()
+    await page.getByText('Installerad. Öppna Mac-inställningar, välj Skärmsläckare och Lidscape. Välj bild med Alternativ.').waitFor()
+    assert.equal(await page.evaluate(() => window.__saverState.matchesSource), true)
+    await page.locator('#saver-reinstall').click()
+    await page.getByText('Följ installationsdialogen i macOS. Den tidigare versionen finns kvar om du avbryter.').waitFor()
+    await page.locator('#saver-close').click()
+    await page.evaluate(() => { window.__saverState.matchesSource = false; window.__cancelSaver = true })
+    await page.locator('#map-saver').click()
+    await page.getByText('Appen innehåller en annan version. Välj Installera om för att uppdatera.').waitFor()
+    await page.locator('#saver-reinstall').click()
+    await page.getByText('macOS bekräftade inte uppdateringen. Den tidigare versionen kan finnas kvar.').waitFor()
+    assert.equal(await page.evaluate(() => window.__saverState.installed), true)
+    assert.equal(await page.evaluate(() => window.__saverState.matchesSource), false)
+    assert.equal(await page.locator('#saver-reinstall').isEnabled(), true)
     assert.deepEqual(errors, [])
   })
 })
