@@ -26,7 +26,36 @@ private struct SaverOptions: Decodable {
 private let saverBundleID = "se.sandstream.lidscape.screensaver"
 private let oldSaverBundleID = "se.sandstream.lidscape.saver"
 private let saverLog = Logger(subsystem: saverBundleID, category: "screen-saver")
-private var sensorLaunchRequested = false
+private var sensorLaunchRequestedAt: Date?
+private let sensorLaunchRetryInterval: TimeInterval = 5
+
+private struct PageRetryState {
+    private(set) var delay: TimeInterval = 1
+    private var generation = 0
+    private var pending = false
+
+    mutating func schedule() -> (generation: Int, delay: TimeInterval)? {
+        guard !pending else { return nil }
+        pending = true
+        generation += 1
+        let result = (generation, delay)
+        delay = min(delay * 2, 30)
+        return result
+    }
+
+    mutating func begin(generation: Int) -> Bool {
+        guard pending, generation == self.generation else { return false }
+        pending = false
+        return true
+    }
+
+    mutating func cancel() {
+        pending = false
+        generation += 1
+    }
+
+    mutating func markHealthy() { delay = 1 }
+}
 
 private final class WeakFrameHandler: NSObject, WKScriptMessageHandler {
     weak var receiver: WKScriptMessageHandler?
@@ -47,8 +76,12 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     private var webView: WKWebView?
     private var fallbackView: NSImageView?
     private var fallbackTimer: Timer?
+    private var animationActive = false
     private var lastRenderSeen: Date?
     private var renderStartedAt: Date?
+    private var pageRetry = PageRetryState()
+    private var pageURL: URL?
+    private var resourcesURL: URL?
     private var sensorSession: URLSession?
     private var sensorTask: URLSessionWebSocketTask?
     private var sensorHeartbeatTimer: Timer?
@@ -155,6 +188,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
 
     override func startAnimation() {
         super.startAnimation()
+        animationActive = true
         refreshPoster()
         if fallbackTimer == nil {
             let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.updateFallback() }
@@ -163,30 +197,39 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             fallbackTimer = timer
         }
         saverLog.debug("start preview=\(self.isPreview) size=\(self.bounds.width)x\(self.bounds.height)")
-        guard fallbackView == nil else {
-            if let fallbackView {
-                fallbackView.removeFromSuperview()
-                addSubview(fallbackView, positioned: .above, relativeTo: webView)
-                fallbackView.needsDisplay = true
-            }
-            updateFallback()
-            return
+        if let fallbackView {
+            fallbackView.removeFromSuperview()
+            addSubview(fallbackView, positioned: .above, relativeTo: webView)
+            fallbackView.needsDisplay = true
+        } else {
+            let fallback = NSImageView(frame: bounds)
+            fallback.image = poster
+            fallback.imageScaling = .scaleAxesIndependently
+            fallback.autoresizingMask = [.width, .height]
+            addSubview(fallback)
+            fallbackView = fallback
         }
-        let fallback = NSImageView(frame: bounds)
-        fallback.image = poster
-        fallback.imageScaling = .scaleAxesIndependently
-        fallback.autoresizingMask = [.width, .height]
-        addSubview(fallback)
-        fallbackView = fallback
-        if showsThumbnail {
-            return
-        }
+        startLiveSceneIfNeeded()
+        updateFallback()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        guard animationActive else { return }
+        startLiveSceneIfNeeded()
+        updateFallback()
+    }
+
+    private func startLiveSceneIfNeeded() {
+        guard animationActive, !showsThumbnail, webView == nil, let fallback = fallbackView else { return }
         let bundle = Bundle(for: Self.self)
         guard let resources = bundle.resourceURL,
               let page = bundle.url(forResource: "index", withExtension: "html", subdirectory: "web") else {
             NSLog("Lidscape saver: bundled page is missing")
             return
         }
+        pageURL = page
+        resourcesURL = resources
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(WeakFrameHandler(receiver: self), name: "lidscapeFrame")
@@ -214,8 +257,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         view.autoresizingMask = [.width, .height]
         view.navigationDelegate = self
         view.underPageBackgroundColor = NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1)
-        addSubview(view)
         webView = view
+        addSubview(view)
         addSubview(fallback, positioned: .above, relativeTo: view)
         updateFallback()
         view.loadFileURL(page, allowingReadAccessTo: resources)
@@ -235,6 +278,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             renderStartedAt = now
         }
         lastRenderSeen = now
+        if let started = renderStartedAt, now.timeIntervalSince(started) >= 10 { pageRetry.markHealthy() }
         updateFallback()
     }
 
@@ -250,10 +294,15 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     }
 
     override func stopAnimation() {
+        animationActive = false
         fallbackTimer?.invalidate()
         fallbackTimer = nil
         lastRenderSeen = nil
         renderStartedAt = nil
+        pageRetry.cancel()
+        pageRetry.markHealthy()
+        pageURL = nil
+        resourcesURL = nil
         fallbackView?.removeFromSuperview()
         fallbackView = nil
         webView?.evaluateJavaScript("window.lidscapeSaver?.stop()") { _, _ in }
@@ -373,10 +422,14 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         connectSensor()
     }
 
-    private func requestSensorLaunch() {
-        guard !sensorLaunchRequested, let helper = sensorHelperURL,
+    private func requestSensorLaunch(now: Date = Date()) {
+        guard let helper = sensorHelperURL,
               FileManager.default.fileExists(atPath: helper.path) else { return }
-        sensorLaunchRequested = true
+        if let last = sensorLaunchRequestedAt {
+            let elapsed = now.timeIntervalSince(last)
+            if elapsed >= 0 && elapsed < sensorLaunchRetryInterval { return }
+        }
+        sensorLaunchRequestedAt = now
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         configuration.addsToRecentItems = false
@@ -384,7 +437,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         NSWorkspace.shared.openApplication(at: helper, configuration: configuration) { _, error in
             if let error {
                 saverLog.error("lid sensor app did not start: \(error.localizedDescription)")
-                DispatchQueue.main.async { sensorLaunchRequested = false }
             }
         }
     }
@@ -410,6 +462,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
                 case .success(.data):
                     self.receiveSensor(task)
                 case .failure:
+                    self.clearLidAngle()
                     self.sensorTask = nil
                     self.sensorSession?.invalidateAndCancel()
                     self.sensorSession = nil
@@ -426,13 +479,22 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
 
     private func handleSensorMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
-              let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let angle = message["angle"] as? Int, (0...180).contains(angle) else { return }
+              let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        if message["sensor"] as? Bool == false {
+            clearLidAngle()
+            return
+        }
+        guard let angle = message["angle"] as? Int, (0...180).contains(angle) else { return }
         if lastLidAngle == nil { saverLog.notice("lid sensor connected") }
-        sensorLaunchRequested = false
+        sensorLaunchRequestedAt = nil
         sensorRetryDelay = 0.25
         lastLidAngle = angle
         sendLidAngle(angle)
+    }
+
+    private func clearLidAngle() {
+        lastLidAngle = nil
+        webView?.evaluateJavaScript("window.lidscapeSaverClearLidAngle?.()") { _, _ in }
     }
 
     private func sendLidAngle(_ angle: Int) {
@@ -440,10 +502,37 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard self.webView === webView else { return }
+        pageRetry.cancel()
         if let lastLidAngle { sendLidAngle(lastLidAngle) }
     }
 
+    private func schedulePageReload(_ view: WKWebView) {
+        guard webView === view, pageURL != nil, resourcesURL != nil else { return }
+        lastRenderSeen = nil
+        renderStartedAt = nil
+        updateFallback()
+        guard let retry = pageRetry.schedule() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay) { [weak self, weak view] in
+            guard let self, let view, self.webView === view,
+                  let page = self.pageURL, let resources = self.resourcesURL,
+                  self.pageRetry.begin(generation: retry.generation) else { return }
+            view.loadFileURL(page, allowingReadAccessTo: resources)
+        }
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        saverLog.error("WebKit content process stopped")
+        schedulePageReload(webView)
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        NSLog("Lidscape saver: page did not load: %@", error.localizedDescription)
+        saverLog.error("screen saver page did not load: \(error.localizedDescription)")
+        schedulePageReload(webView)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        saverLog.error("screen saver page failed: \(error.localizedDescription)")
+        schedulePageReload(webView)
     }
 }

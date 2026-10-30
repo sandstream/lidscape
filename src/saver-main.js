@@ -86,6 +86,10 @@ window.lidscapeSaverSetLidAngle = (angle) => {
   lid.connected = true
   lid.progress = next
 }
+window.lidscapeSaverClearLidAngle = () => {
+  lid.connected = false
+  lid.progress = null
+}
 const clock = new THREE.Clock()
 let progress = 1
 let running = true

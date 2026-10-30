@@ -30,7 +30,11 @@ export function setupScreenSaverSettings({ t }) {
     try {
       await action()
     } catch (error) {
-      message(t.saverError.replace('{error}', String(error)), true)
+      const detail = String(error)
+        .replace('LIDSCAPE_SAVER_SOURCE_UNVERIFIED', t.saverSourceUnverified)
+        .replace('LIDSCAPE_SAVER_UNVERIFIED', t.saverUnverified)
+        .replace('LIDSCAPE_SAVER_PARTIAL_REMOVAL', t.saverPartialRemoval)
+      message(t.saverError.replace('{error}', detail), true)
     } finally {
       busy = false
       refresh()
