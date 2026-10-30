@@ -46,39 +46,3 @@ These observations show that macOS did not start the screen saver during that lo
 4. Test an Apple-menu lock separately from the hot corner. Record whether the Lock Screen shows Lidscape or the desktop picture immediately, and whether it changes later.
 
 The hot-corner test starts a screen saver first. It does not by itself satisfy a requirement for immediate password protection or for the usual manual lock command to display Lidscape. Starting the saver before Control-Command-Q did not meet the latter requirement in the test above.
-
-## Sensor bridge trust and compatibility
-
-Research date: 30 October 2026. These are design findings. The proposed transport has not been tested in the real screen saver or wallpaper extension.
-
-The current sensor helper accepts local WebSocket clients without an Origin header. A local process can also listen on the same port before the helper. The clients do not authenticate the server. The Origin check limits browser access but does not establish the identity of a local process.
-
-Apple documents [App Group communication](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.application-groups) through Unix domain sockets and XPC. One candidate is a Unix socket in a shared App Group container. Both endpoints would obtain the peer audit token from the socket and check the peer's code signature before exchanging angles. The macOS SDK declares `LOCAL_PEERTOKEN` and `kSecGuestAttributeAudit`. This design must fail closed if the token or signature cannot be verified.
-
-A local socket probe tested this mechanism five times. Temporary command-line processes used `LOCAL_PEERTOKEN` and `SecCodeCheckValidity`. Six trusted clients started in parallel, and the server handled their connections one at a time. A client with a generic sandbox profile also connected. The server rejected a different client with the same identifier. The client rejected a different server with the same identifier before accepting data.
-
-The probe used ad hoc signatures and required an exact code hash. Its sandbox allowed broad file reads and outbound network access. It did not test Developer ID requirements, the real Apple screen saver host, the wallpaper extension, or their sandbox policies. It did not contact the existing sensor helper. The temporary processes and files were removed.
-
-A second local probe used Sandstream's Developer ID Application signature without a network timestamp. Each endpoint checked the peer audit token against the expected team and identifier. Six trusted clients started in parallel. The server handled their connections one at a time. A client with a generic sandbox profile also connected.
-
-An ad hoc client with the trusted client identifier was rejected. An ad hoc server with the trusted server identifier was also rejected. A valid server was rejected when the client required a different team or identifier. The full probe passed four times.
-
-The second probe used temporary command-line processes and a permissive sandbox profile. It did not exercise the screen saver or wallpaper extension. It did not contact existing sensor processes. All test processes and files were removed. The real integration and its sandbox behavior remain to be tested.
-
-The actual screen saver runs inside Apple's `com.apple.ScreenSaver.Engine.legacyScreenSaver` process. On the test Mac, that process is sandboxed and has the network client entitlement. Its signature does not list Lidscape's App Group. A code-signature check can identify Apple's host process. It cannot identify which screen saver module is running inside that process. Another module in the same host shares the host's identity. This is an explicit limit of the proposed check.
-
-The wallpaper extension is signed by Sandstream and has Lidscape's App Group. Its connection must be checked separately from the Apple screen saver host. Apple says sandbox permissions do not override all other file access controls. See [Accessing files from the macOS App Sandbox](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox). The legacy host's access to the proposed socket location is not established by its entitlements alone.
-
-A named XPC service is an alternative if the socket cannot serve all clients. Apple documents [code-signing requirements for XPC peers](https://developer.apple.com/documentation/foundation/nsxpcconnection/setcodesigningrequirement%28_%3A%29). A user Launch Agent would also need a clear installation and removal path. The standalone screen saver must not depend on an agent that is present only when the main app is installed. Neither sandbox access nor launch behavior has been verified for this design.
-
-A shared token in a file is not a complete defense against another program running as the same user. Restricting a file to that user does not distinguish programs under the same account. Do not put a credential in the web page, JavaScript, a URL, or a log. The current browser page connects directly to the local WebSocket. Replacing it requires a native relay or an explicit decision about browser support. Do not silently fall back to unauthenticated transport while claiming authentication.
-
-The following tests are required before adopting either candidate:
-
-1. Connect the signed sensor helper, the Mac app, the wallpaper extension, and the real legacy screen saver host. Verify the received peer identity in both directions.
-2. Attempt connections from an unsigned client, another developer's signed client, and a fake server. Reject each one before sending an angle. Check that an unrelated plugin inside Apple's host is outside the isolation guarantee.
-3. Test several concurrent clients, both displays, helper exit and restart, sleep and wake, and operation while the Mac is locked. Stop each view and confirm that its connection closes.
-4. Test a long user directory path. Apple limits Unix socket path length. The proposed path on the test Mac uses 92 bytes, including its one-character socket name.
-5. Verify installation, updates, and removal for both the standalone screen saver and the main app. Preserve the existing behavior until the new transport passes these tests.
-
-Apple's [anonymous XPC listener test technique](https://developer.apple.com/documentation/technotes/tn3113-testing-xpc-code-with-an-anonymous-listener) can cover message handling. It does not replace tests across the real processes and sandboxes.
