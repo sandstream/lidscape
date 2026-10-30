@@ -1,5 +1,7 @@
 import test from 'node:test'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createServer } from 'node:http'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -339,6 +341,122 @@ preview.exerciseStalledPreview()
       '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
     execFileSync(executable, [], { stdio: 'pipe' })
   } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+
+test('stopping the screen saver closes its sensor connection', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-disconnect-test-'))
+  const server = createServer()
+  let connection
+  let connected = false
+  let disconnected = false
+  let receivedAngle = false
+  let closeBeforeStop = false
+  let closeFrameSeen = false
+  let stopRequested = false
+  let closeWhileRunning = false
+  let child
+  const stopChild = () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  t.signal.addEventListener('abort', stopChild, { once: true })
+  server.on('upgrade', (request, socket) => {
+    connected = true
+    connection = socket
+    socket.on('error', () => {})
+    socket.on('close', () => {
+      disconnected = true
+      closeWhileRunning = child?.exitCode === null
+      if (closeWhileRunning) child.stdin.end('D')
+    })
+    socket.on('data', chunk => {
+      if ((chunk[0] & 0x0f) === 8) {
+        closeFrameSeen = true
+        if (!stopRequested) closeBeforeStop = true
+        socket.end(Buffer.from([0x88, 0x00]))
+      }
+    })
+    const key = request.headers['sec-websocket-key']
+    const accept = createHash('sha1')
+      .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    const message = Buffer.from('{"angle":120}')
+    socket.write(Buffer.concat([Buffer.from([0x81, message.length]), message]))
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseSensorDisconnect(port: Int) {
+        sensorActive = true
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.webSocketTask(with: URL(string: "ws://127.0.0.1:\\(port)")!)
+        sensorSession = session
+        sensorTask = task
+        task.resume()
+        receiveSensor(task)
+        let deadline = Date().addingTimeInterval(5)
+        while lastLidAngle != 120 && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        precondition(lastLidAngle == 120, "The server must send a real sensor message")
+        FileHandle.standardOutput.write(Data("angle-received\\n".utf8))
+        let signal = FileHandle.standardInput.readData(ofLength: 1)
+        precondition(signal == Data([83]), "The test must signal the stop")
+        stopAnimation()
+        let closed = FileHandle.standardInput.readData(ofLength: 1)
+        precondition(closed == Data([68]), "The test must observe the closed connection")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
+`
+    const file = join(dir, 'disconnect.swift')
+    const executable = join(dir, 'disconnect')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    child = spawn(executable, [String(server.address().port)])
+    child.stdin.on('error', () => {})
+    let output = ''
+    let errorOutput = ''
+    child.stdout.on('data', chunk => {
+      output += chunk
+      if (!receivedAngle && output.includes('angle-received')) {
+        receivedAngle = true
+        stopRequested = true
+        child.stdin.write('S')
+      }
+    })
+    child.stderr.on('data', chunk => { errorOutput += chunk })
+    const status = await new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+    if (status !== 0) throw new Error(`Sensor test failed (${status}): ${errorOutput}`)
+    if (!connected || !receivedAngle) throw new Error('The sensor connection did not receive its angle')
+    if (!closeFrameSeen || !disconnected || closeBeforeStop || !closeWhileRunning) {
+      throw new Error('The sensor connection did not close after the screen saver stopped while its process was running')
+    }
+  } finally {
+    t.signal.removeEventListener('abort', stopChild)
+    const childClosed = child?.exitCode === null && child.signalCode === null
+      ? new Promise(resolve => child.once('close', resolve))
+      : null
+    stopChild()
+    if (childClosed) await childClosed
+    connection?.destroy()
+    await new Promise(resolve => server.close(resolve))
     await rm(dir, { recursive: true, force: true })
   }
 })
