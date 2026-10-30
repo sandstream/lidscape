@@ -10,7 +10,8 @@ cp "$ROOT/index.html" web/
 cp -R "$ROOT/src" "$ROOT/assets" web/
 find web/src -type f \( -name '*.test.js' -o -name '*.test-support.js' \) -delete
 mkdir -p src-tauri/binaries
-swiftc -O "$ROOT/bridge/LidBridge.swift" -o src-tauri/binaries/lid-bridge-aarch64-apple-darwin
+MINIMUM_MACOS_VERSION=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["bundle"]["macOS"]["minimumSystemVersion"])')
+xcrun swiftc -target "arm64-apple-macosx$MINIMUM_MACOS_VERSION" -O "$ROOT/bridge/LidBridge.swift" -o src-tauri/binaries/lid-bridge-aarch64-apple-darwin
 sh "$ROOT/screensaver/build.sh"
 WALLPAPER_OUT="$PWD/src-tauri/target/wallpaper"
 mkdir -p "$WALLPAPER_OUT"

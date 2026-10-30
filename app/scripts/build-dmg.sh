@@ -25,10 +25,10 @@ if [ -n "$IDENTITY" ]; then
     . "$ENV_FILE"
     export APPLE_API_KEY APPLE_API_ISSUER
     export APPLE_API_KEY_PATH="$HOME/.private_keys/AuthKey_$APPLE_API_KEY.p8"
-    test -f "$APPLE_API_KEY_PATH" || { echo "FAIL: $APPLE_API_KEY_PATH saknas"; exit 1; }
+    test -f "$APPLE_API_KEY_PATH" || { echo "FAIL: den privata nyckelfilen saknas"; exit 1; }
     NOTARIZE=1
     export LIDSCAPE_NOTARIZE_WALLPAPER=1
-    echo "Notariserar med API-nyckel $APPLE_API_KEY"
+    echo "Notariserar med App Store Connect"
   else
     echo "VARNING: notarize.env saknas, så appen notariseras inte."
   fi
@@ -61,6 +61,7 @@ for b in lidscape lid-bridge; do
   test -x "$APP/Contents/MacOS/$b" || { echo "FAIL: $b missing"; exit 1; }
   codesign --verify --strict "$APP/Contents/MacOS/$b" || { echo "FAIL: $b is not signed"; exit 1; }
 done
+python3 scripts/check-macos-target.py "$APP/Contents/Info.plist" "$APP/Contents/MacOS/lid-bridge"
 SAVER="$APP/Contents/Resources/LidscapeScreenSaver.saver"
 test -f "$SAVER/Contents/Resources/web/saver.js" || { echo "FAIL: screen saver missing"; exit 1; }
 codesign --verify --deep --strict "$SAVER" || { echo "FAIL: screen saver signature invalid"; exit 1; }
