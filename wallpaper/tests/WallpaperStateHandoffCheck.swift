@@ -6,10 +6,11 @@ final class WallpaperRenderer: @unchecked Sendable { let debugID = 1 }
 final class WallpaperSurface: @unchecked Sendable {
     var renderer: WallpaperRenderer?
     var stopCount = 0
+    var onStop: (@Sendable () -> Void)?
     func refreshVideoSource(_ url: URL) {}
     func applyPolicy(_ policy: PlaybackPolicy, animated: Bool = false) {}
     func settle() {}
-    func stop() { stopCount += 1 }
+    func stop() { stopCount += 1; onStop?() }
 }
 final class VideoLibrary: @unchecked Sendable {
     static let shared = VideoLibrary()

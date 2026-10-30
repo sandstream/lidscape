@@ -14,6 +14,14 @@ callbacks. `check-wallpaper-state-handoff.sh` exercises the actual
 preview isolation and state after a first frame arrives during disconnection.
 `check-wallpaper-owner-invalidation.sh` checks the atomic owner guard.
 `check-wallpaper-handoff-owner-change.sh` checks a replacement owner change.
+`check-wallpaper-acquire-cancellation.sh` tests the acquire reply guard with the
+real state and a fake surface. It covers cancellation, context replacement,
+owner changes, reconnect, repeated completion and reentrant teardown.
+`check-wallpaper-real-surface-acquire.sh` tests state, the reply guard and the
+real surface together with a fake producer. It checks that stopping an in-flight
+build sends one error and that a late frame does not send another reply.
+The reply guard does not set its own deadline. If a producer never completes and
+the surface is never stopped, the acquire can remain unanswered.
 These checks do not call `WallpaperXPCHandler` or host a real CAContext.
 
 The extension build checks that the XPC and state integration compiles. It does

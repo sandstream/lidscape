@@ -52,6 +52,23 @@ struct WallpaperSurfaceError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+private final class SurfaceBuildCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var callback: (@Sendable (Result<Int, Error>) -> Void)?
+
+    init(_ callback: @escaping @Sendable (Result<Int, Error>) -> Void) {
+        self.callback = callback
+    }
+
+    func resolve(_ result: Result<Int, Error>) {
+        lock.lock()
+        let current = callback
+        callback = nil
+        lock.unlock()
+        current?(result)
+    }
+}
+
 /// One wallpaper rendering slot: a layer deck, the renderer currently feeding it, and the
 /// state machine that swaps content with a crossfade.
 ///
@@ -100,6 +117,7 @@ final class WallpaperSurface: @unchecked Sendable {
     /// after the user has already picked something else.
     private var generation: UInt64 = 0
     private var buildInFlight = false
+    private var buildCompletions: [UInt64: SurfaceBuildCompletion] = [:]
     private var queued: QueuedRequest?
     /// At most one poll timer in flight. Arming one per `setContent`-while-busy would let
     /// N rapid switches burn the retry budget N times faster than the comment on
@@ -193,7 +211,13 @@ final class WallpaperSurface: @unchecked Sendable {
         )
         generation &+= 1
         buildInFlight = true
-        build(content, generation: generation, completion: completion)
+        let currentGeneration = generation
+        let once = SurfaceBuildCompletion(completion)
+        buildCompletions[currentGeneration] = once
+        build(content, generation: currentGeneration) { [weak self] result in
+            self?.buildCompletions.removeValue(forKey: currentGeneration)
+            once.resolve(result)
+        }
     }
 
     private func build(
@@ -538,13 +562,21 @@ final class WallpaperSurface: @unchecked Sendable {
         // this the surface would also stay wedged at `buildInFlight == true` forever.
         generation &+= 1
         buildInFlight = false
+        let completions = Array(buildCompletions.values)
+        buildCompletions.removeAll()
+        let cancelled = queued
+        queued = nil
         deck.settle()
         renderer?.stop(preservingDisplayLayer: true)
         rendererLock.withLock { $0 = nil }
         contentIdentity = nil
-        queued?.completion(.failure(WallpaperSurfaceError(
+        for completion in completions {
+            completion.resolve(.failure(WallpaperSurfaceError(
+                message: "The wallpaper surface went away."
+            )))
+        }
+        cancelled?.completion(.failure(WallpaperSurfaceError(
             message: "The wallpaper surface went away."
         )))
-        queued = nil
     }
 }

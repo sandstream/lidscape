@@ -201,17 +201,6 @@ private func makeRemoteSurface(
     )
 }
 
-private func currentContextReply(
-    for key: DisplayKey,
-    fallback: AnyObject
-) -> AnyObject {
-    guard let contextID = WallpaperState.shared.context(for: key)?.contextId,
-          let reply = createRemoteContextXPC(contextId: contextID) else {
-        return fallback
-    }
-    return reply
-}
-
 /// Process-wide serialization for wallpaper lifecycle XPC. Every connection gets its own
 /// `WallpaperXPCHandler`, but the Agent multiplexes desktop + Settings-preview + thumbnail
 /// connections, so lifecycle callbacks (acquire/update/invalidate/choice change) can
@@ -915,38 +904,40 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
         )
         let createAssignment = manifestAssignment?.assignment
         let createContentUUID = manifestAssignment?.contentUUID
-        let replyObject = SendableBox(value: remote.replyObject)
-        remote.surface.setContent(createContent) { result in
-            switch result {
-            case .success(let rendererID):
-                WallpaperPrefs.shared.refreshActiveState()
-                WallpaperPrefs.shared.applyCurrentState()
-                if let createAssignment, let createContentUUID {
-                    WallpaperAssignmentStore.shared.markSurfaceApplied(
-                        createAssignment,
-                        contentUUID: createContentUUID,
-                        key: key,
-                        rendererID: rendererID
+        let pendingReply = WallpaperAcquireReply(
+            state: WallpaperState.shared, key: key, surface: remote.surface,
+            context: remote.context, contextID: remote.contextID,
+            owner: acquisitionOwner, replyObject: remote.replyObject, reply: reply
+        )
+        remote.surface.setContent(createContent) { [weak surface = remote.surface] result in
+            pendingReply.complete(beforeReply: {
+                switch result {
+                case .success(let rendererID):
+                    WallpaperPrefs.shared.refreshActiveState()
+                    WallpaperPrefs.shared.applyCurrentState()
+                    if let createAssignment, let createContentUUID {
+                        WallpaperAssignmentStore.shared.markSurfaceApplied(
+                            createAssignment,
+                            contentUUID: createContentUUID,
+                            key: key,
+                            rendererID: rendererID
+                        )
+                    }
+                case .failure(let error):
+                    extensionLog(
+                        "  [acquire] renderer did not become current: \(error); "
+                            + "using the fallback wallpaper"
                     )
+                    if let createAssignment {
+                        WallpaperAssignmentStore.shared.recordError(
+                            error.localizedDescription,
+                            for: createAssignment
+                        )
+                    }
                 }
-                reply(replyObject.value, nil)
-            case .failure(let error):
-                extensionLog(
-                    "  [acquire] renderer did not become current: \(error); "
-                        + "using the fallback or newer wallpaper"
-                )
-                if let createAssignment {
-                    WallpaperAssignmentStore.shared.recordError(
-                        error.localizedDescription,
-                        for: createAssignment
-                    )
-                }
-                reply(
-                    currentContextReply(for: key, fallback: replyObject.value),
-                    nil
-                )
-            }
-            surfaceBecameReady(key, surface: remote.surface)
+            }, afterReply: {
+                if let surface { surfaceBecameReady(key, surface: surface) }
+            })
         }
         if !isMetalScene {
             let w = Int(geometry.snapshotPixelSize.width)
