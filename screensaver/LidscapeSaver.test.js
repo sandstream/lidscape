@@ -349,7 +349,7 @@ preview.exerciseStalledPreview()
 test('stopping the screen saver closes its sensor connection', {
   skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
   timeout: 60000,
-}, async () => {
+}, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-disconnect-test-'))
   const server = createServer()
   let connection
@@ -361,6 +361,10 @@ test('stopping the screen saver closes its sensor connection', {
   let stopRequested = false
   let closeWhileRunning = false
   let child
+  const stopChild = () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  t.signal.addEventListener('abort', stopChild, { once: true })
   server.on('upgrade', (request, socket) => {
     connected = true
     connection = socket
@@ -368,6 +372,7 @@ test('stopping the screen saver closes its sensor connection', {
     socket.on('close', () => {
       disconnected = true
       closeWhileRunning = child?.exitCode === null
+      if (closeWhileRunning) child.stdin.end('D')
     })
     socket.on('data', chunk => {
       if ((chunk[0] & 0x0f) === 8) {
@@ -406,10 +411,11 @@ extension LidscapeSaverView {
         }
         precondition(lastLidAngle == 120, "The server must send a real sensor message")
         FileHandle.standardOutput.write(Data("angle-received\\n".utf8))
-        FileHandle.standardOutput.write(Data("stopping\\n".utf8))
-        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        let signal = FileHandle.standardInput.readData(ofLength: 1)
+        precondition(signal == Data([83]), "The test must signal the stop")
         stopAnimation()
-        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        let closed = FileHandle.standardInput.readData(ofLength: 1)
+        precondition(closed == Data([68]), "The test must observe the closed connection")
     }
 }
 let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
@@ -421,12 +427,16 @@ view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
     execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
       '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
     child = spawn(executable, [String(server.address().port)])
+    child.stdin.on('error', () => {})
     let output = ''
     let errorOutput = ''
     child.stdout.on('data', chunk => {
       output += chunk
-      if (output.includes('angle-received')) receivedAngle = true
-      if (output.includes('stopping')) stopRequested = true
+      if (!receivedAngle && output.includes('angle-received')) {
+        receivedAngle = true
+        stopRequested = true
+        child.stdin.write('S')
+      }
     })
     child.stderr.on('data', chunk => { errorOutput += chunk })
     const status = await new Promise((resolve, reject) => {
@@ -439,6 +449,12 @@ view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
       throw new Error('The sensor connection did not close after the screen saver stopped while its process was running')
     }
   } finally {
+    t.signal.removeEventListener('abort', stopChild)
+    const childClosed = child?.exitCode === null && child.signalCode === null
+      ? new Promise(resolve => child.once('close', resolve))
+      : null
+    stopChild()
+    if (childClosed) await childClosed
     connection?.destroy()
     await new Promise(resolve => server.close(resolve))
     await rm(dir, { recursive: true, force: true })
