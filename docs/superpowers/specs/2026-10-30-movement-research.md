@@ -223,7 +223,33 @@ This is a gap for all movements, also for Pop-up and the screen saver shuffle.
    Stockholm landmark and on a row of houses. If wide buildings look strange,
    cities keep Pop-up and only figures get Push puppet.
 
+4. The style order is Monet, Bricks, Blocks, Van Gogh, papercut. (Peter
+   let Claude choose.)
+
+## Result of M1, 30 October 2026
+
+The prototype is in the page behind `?movement=puppet`. It works on every
+city with no new data.
+
+![Stockholm as a push puppet, lid half open](../../push-puppet.png)
+
+- A shader bends the items into beads, so the merged meshes and the shadows
+  stay as they are. `src/movement.js` has the pose, the spring and the tests.
+- Towers and spires work well. A spire or a crown moves with the item its
+  foot stands on.
+- Low, wide items stand still: hills, the quay and the palace. As beads they
+  turned into long poles that went up into the sky.
+- At lid 1 the push puppet gives the same picture as Pop-up. The mean
+  difference of the building area in two screenshots is 0.19 of 255.
+- The windows do not bend. They show only on a standing figure.
+- Frame time in headless Chromium: median 16.7 ms.
+- Not checked: the feel with the real lid, and Reduce Motion on a real Mac.
+  The unit tests check that Reduce Motion gives no wobble.
+
+Recommendation: cities keep Pop-up as the default. Push puppet is a choice
+for cities, and the default for figures.
+
 ## Open questions to Peter
 
-1. Blocks is a new style next to Bricks. Is the style order now Monet,
-   Bricks, Blocks, Van Gogh, papercut?
+1. Do the cities with Push puppet look good enough to keep it as a choice
+   for cities? See the screenshot above.

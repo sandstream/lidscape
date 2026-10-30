@@ -98,8 +98,9 @@ Lid value f: 0 is flat, 1 is standing.
 | --- | --- | --- | --- |
 | Monet (impressionism) | The picture dissolves into soft brush strokes as f falls, like haze at dusk. | A post step in `src/post.js` (Kuwahara filter, a common oil-paint filter). | 1 |
 | Bricks (generic toy bricks) | Bricks stack up, layer by layer, as f rises, and fall to the page as f falls. | New geometry: convert each motif to bricks with InstancedMesh. | 2 |
-| Van Gogh | The sky swirls more as f rises. Lights get halos. | Brush strokes that follow a swirl field. Harder than Monet. | 3 |
-| Papercut shadow box | Layers move apart in depth, and the backlight gets brighter as f rises. | Extrude the existing outlines into stacked planes. Low work. | 4 |
+| Blocks (generic cubes) | The motif crumbles to a pile of cubes as f falls, and builds up again as f rises. | Convert each motif to cubes with InstancedMesh, as Bricks. Movement: Crumble. | 3 |
+| Van Gogh | The sky swirls more as f rises. Lights get halos. | Brush strokes that follow a swirl field. Harder than Monet. | 4 |
+| Papercut shadow box | Layers move apart in depth, and the backlight gets brighter as f rises. | Extrude the existing outlines into stacked planes. Low work. | 5 |
 | Mosaic | Tiles fly into place as f rises. | Instanced quads or a screen shader. | Later |
 | Stained glass | Light shines through as the motif stands up. | Voronoi cell shader with dark lead lines. | Later |
 | Neon line | Lines draw on from 0 to 1 and the glow follows f. | Edge lines with a bloom pass. Low work. | Later |
