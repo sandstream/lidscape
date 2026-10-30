@@ -28,3 +28,14 @@ jobs:
       - run: node tools/check-cities.mjs
       - run: node tools/check-camera.mjs
       - run: node tools/check-lid.mjs
+
+  rust-check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build sensor helper for the test build
+        run: |
+          mkdir -p app/src-tauri/binaries
+          swiftc -O bridge/LidBridge.swift -o "app/src-tauri/binaries/lid-bridge-$(rustc -vV | sed -n 's/^host: //p')"
+      - name: Test Mac installation and settings
+        run: cargo test --locked --lib --manifest-path app/src-tauri/Cargo.toml
