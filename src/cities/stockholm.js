@@ -1,8 +1,8 @@
 // Stockholm seen from Skeppsholmen across Strömmen, looking west at Gamla stan.
 // Left (south): Södermalm's heights with Katarina kyrka. Middle: Tyska kyrkan,
 // Storkyrkan and Riddarholmskyrkan's iron spire. Right (north): Kungliga slottet
-// on the water, with Stadshuset's tower behind it. Skeppsbron quay up front,
-// with a Djurgården tram rolling in.
+// on the water, with Stadshuset's tower behind it, then Kaknästornet. Skeppsbron
+// quay up front, with a Djurgården tram rolling in.
 // Units are centimetres behind the screen. x = 0 is the screen centre.
 // Landmark sources: docs/cities/stockholm.md
 
@@ -390,6 +390,50 @@ function globen(x) {
   ]
 }
 
+// Kaknästornet (1967): a 155 m concrete TV tower on Gärdet, about 170 m with its
+// mast. Square shaft; the head with restaurant and antenna platforms is turned
+// 45 degrees, so it reads wider than the shaft. A lattice mast on top.
+function kaknastornet(x) {
+  const shaft = 0.7
+  const head = 1.2
+  return [
+    {
+      type: 'outline',
+      x,
+      tint: '#cfcac0',
+      points: mirrored([
+        [shaft + 0.15, 0],
+        [shaft, 1],
+        [shaft, 19.6],
+        // The turned head: restaurant, café and the two antenna platforms
+        [head, 20.1],
+        [head, 21.3],
+        [head - 0.15, 21.5],
+        [head, 21.7],
+        [head, 22.5],
+        [shaft + 0.1, 22.8],
+        [shaft + 0.1, 23.3],
+        [head - 0.1, 23.4],
+        [head - 0.1, 23.8],
+        [0.5, 24],
+        // Lattice mast
+        [0.22, 24],
+        [0.12, 27.2],
+        [0.04, 27.2],
+        [0.04, 28.2],
+      ]),
+      windows: [
+        { x: -0.75, y: 20.8, w: 0.5, h: 0.45 },
+        { x: 0, y: 20.8, w: 0.5, h: 0.45 },
+        { x: 0.75, y: 20.8, w: 0.5, h: 0.45 },
+        { x: -0.75, y: 22.1, w: 0.5, h: 0.35 },
+        { x: 0, y: 22.1, w: 0.5, h: 0.35 },
+        { x: 0.75, y: 22.1, w: 0.5, h: 0.35 },
+      ],
+    },
+  ]
+}
+
 // Hover labels: name and one line of facts, from docs/cities/stockholm.md.
 const LABELS = {
   stadshuset: { name: { sv: 'Stadshuset', en: 'City Hall' }, note: { sv: '1923 · tornet 106 m', en: '1923 · tower 106 m' } },
@@ -399,6 +443,7 @@ const LABELS = {
   slottet: { name: { sv: 'Kungliga slottet', en: 'Royal Palace' }, note: { sv: 'Inflyttat 1754', en: 'Royal home since 1754' } },
   katarina: { name: { sv: 'Katarina kyrka', en: 'Katarina Church' }, note: '1695 · 72 m' },
   globen: { name: 'Globen', note: 'Avicii Arena · 1989 · 85 m' },
+  kaknas: { name: 'Kaknästornet', note: { sv: '1967 · 155 m, 170 m med masten', en: '1967 · 155 m, 170 m with the mast' } },
 }
 const labelled = (label, items) => [items].flat().map((item) => ({ ...item, label }))
 
@@ -428,6 +473,12 @@ export const stockholm = {
       // includes. Seen from Skeppsholmen it hides behind Söder; here it rises above.
       z: -75,
       items: labelled(LABELS.globen, globen(-32)),
+    },
+    {
+      // Kaknästornet on Gärdet, north-east behind the viewer. Drawn Stockholm
+      // skylines put it in anyway, so it stands north of Stadshuset here.
+      z: -72,
+      items: labelled(LABELS.kaknas, kaknastornet(30)),
     },
     {
       // Södermalm's heights to the south, low Kungsholmen to the north
