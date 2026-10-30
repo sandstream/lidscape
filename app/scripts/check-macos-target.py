@@ -35,12 +35,23 @@ def main(plist_path, executable_path):
         or any(version_parts(version) != expected for version in minimums)
     ):
         raise ValueError("The executable minimum macOS version does not match the bundle")
-    subprocess.run(
-        ["xcrun", "lipo", "-verify_arch", "arm64", executable_path],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    architectures = subprocess.run(
+        ["xcrun", "lipo", executable_path, "-archs"],
+        text=True,
+        capture_output=True,
     )
+    if architectures.returncode != 0:
+        detail = architectures.stderr.strip() or architectures.stdout.strip() or "no diagnostic"
+        raise ValueError(f"Could not list executable architectures: {detail}")
+    available = architectures.stdout.strip() or "none"
+    verification = subprocess.run(
+        ["xcrun", "lipo", executable_path, "-verify_arch", "arm64"],
+        text=True,
+        capture_output=True,
+    )
+    if verification.returncode != 0 or "arm64" not in architectures.stdout.split():
+        detail = verification.stderr.strip() or verification.stdout.strip() or "no diagnostic"
+        raise ValueError(f"Could not verify arm64; architectures: {available}; {detail}")
 
 
 if __name__ == "__main__":

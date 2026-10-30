@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -71,6 +71,15 @@ test('the release check rejects executables for another platform or architecture
       const result = spawnSync('python3', [check, plist, binary], { encoding: 'utf8' })
       assert.equal(result.status, expected, result.stderr)
     }
+    const stub = join(fixture, 'xcrun')
+    await writeFile(stub, '#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "-verify_arch" ]; then\n    echo "simulated verification failure" >&2\n    exit 1\n  fi\ndone\nexec /usr/bin/xcrun "$@"\n')
+    await chmod(stub, 0o755)
+    const failed = spawnSync('python3', [check, plist, join(fixture, 'mac-arm')], {
+      encoding: 'utf8', env: { ...process.env, PATH: `${fixture}:${process.env.PATH}` },
+    })
+    assert.notEqual(failed.status, 0)
+    assert.match(failed.stderr, /architectures: arm64/)
+    assert.match(failed.stderr, /simulated verification failure/)
   } finally {
     await rm(fixture, { recursive: true, force: true })
   }
