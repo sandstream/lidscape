@@ -5,6 +5,7 @@ export function setupScreenSaverSettings({ t }) {
   const dialog = document.getElementById('saver-settings')
   const status = document.getElementById('saver-status')
   const install = document.getElementById('saver-install')
+  const reinstall = document.getElementById('saver-reinstall')
   const system = document.getElementById('saver-system')
   const close = document.getElementById('saver-close')
   let current = null
@@ -12,6 +13,7 @@ export function setupScreenSaverSettings({ t }) {
 
   document.getElementById('saver-title').textContent = t.saverTitle
   document.getElementById('saver-description').textContent = t.saverDescription
+  reinstall.textContent = t.saverReinstall
   system.textContent = t.saverSystem
   close.textContent = t.saverClose
 
@@ -21,8 +23,15 @@ export function setupScreenSaverSettings({ t }) {
   }
   function refresh() {
     install.disabled = busy || !current || (!current.available && !current.installed)
+    reinstall.hidden = !current?.installed
+    reinstall.disabled = busy || !current?.available
     system.disabled = busy || !current?.installed
     install.textContent = current?.installed ? t.saverUninstall : t.saverInstall
+  }
+  function statusMessage(state) {
+    if (!state.available) return t.saverUnavailable
+    if (!state.installed) return t.saverReady
+    return state.matchesSource === false ? t.saverUpdateAvailable : t.saverInstalled
   }
   async function run(action) {
     busy = true
@@ -51,9 +60,28 @@ export function setupScreenSaverSettings({ t }) {
       dialog.showModal()
       run(async () => {
         current = await invoke('screensaver_status')
-        message(!current.available ? t.saverUnavailable : current.installed ? t.saverInstalled : t.saverReady)
+        message(statusMessage(current))
       })
     })
+  }
+  async function installSaver(replacing) {
+    const priorMatches = current.matchesSource
+    let result = await invoke('install_screensaver')
+    if (replacing && priorMatches !== false) {
+      current = result
+      message(t.saverReinstallStarted)
+      return
+    }
+    if (result.installationPending) {
+      message(t.saverConfirm)
+      for (let attempt = 0; attempt < 60 && dialog.open && !(result.installed && result.matchesSource === true); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        result = await invoke('screensaver_status')
+      }
+    }
+    current = result
+    if (result.installed && result.matchesSource === true) message(t.saverInstalled)
+    else message(replacing ? t.saverUpdateNotConfirmed : t.saverNotConfirmed)
   }
   install.addEventListener('click', () => run(async () => {
     if (current.installed) {
@@ -61,17 +89,9 @@ export function setupScreenSaverSettings({ t }) {
       message(t.saverRemoved)
       return
     }
-    let result = await invoke('install_screensaver')
-    if (result.installationPending) {
-      message(t.saverConfirm)
-      for (let attempt = 0; attempt < 60 && dialog.open && !result.installed; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        result = await invoke('screensaver_status')
-      }
-    }
-    current = result
-    message(result.installed ? t.saverInstalled : t.saverNotInstalled)
+    await installSaver(false)
   }))
+  reinstall.addEventListener('click', () => run(() => installSaver(true)))
   system.addEventListener('click', () => run(async () => {
     await invoke('open_screensaver_settings')
     message(t.saverInstalled)

@@ -10,6 +10,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tauri::Manager;
 
 const BUNDLE_ID: &str = "se.sandstream.lidscape.screensaver";
@@ -18,6 +19,7 @@ const SAVER_NAME: &str = "LidscapeScreenSaver.saver";
 const LEGACY_SAVER_NAME: &str = "Lidscape.saver";
 const TEAM_ID: &str = "VDE8E369XE";
 static NEXT_TRANSACTION: AtomicU64 = AtomicU64::new(0);
+static SAVER_OPERATIONS: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize)]
 pub struct ScreenSaverStatus {
@@ -25,6 +27,8 @@ pub struct ScreenSaverStatus {
     pub available: bool,
     #[serde(rename = "installationPending")]
     pub installation_pending: bool,
+    #[serde(rename = "matchesSource")]
+    pub matches_source: Option<bool>,
 }
 
 struct SaverPaths {
@@ -97,17 +101,70 @@ fn macos_27_or_newer() -> bool {
         .is_some_and(|major| major >= 27)
 }
 
-fn status(paths: &SaverPaths) -> Result<ScreenSaverStatus, String> {
+fn status_with_identity(
+    paths: &SaverPaths,
+    identity: impl Fn(&Path) -> Option<String>,
+    supported: bool,
+) -> Result<ScreenSaverStatus, String> {
+    let installed = if current_bundle(&paths.installed) {
+        Some(paths.installed.as_path())
+    } else if owned_bundle(&paths.legacy_installed) {
+        Some(paths.legacy_installed.as_path())
+    } else {
+        None
+    };
+    let available = supported && current_bundle(&paths.source);
+    let matches_source = installed
+        .filter(|_| available)
+        .and_then(|path| Some(identity(&paths.source)? == identity(path)?));
     Ok(ScreenSaverStatus {
-        installed: current_bundle(&paths.installed) || owned_bundle(&paths.legacy_installed),
-        available: macos_27_or_newer() && current_bundle(&paths.source),
+        installed: installed.is_some(),
+        available,
         installation_pending: false,
+        matches_source,
     })
 }
 
+fn verified_code_identity(path: &Path) -> Option<String> {
+    verify_owned_bundle(path).ok()?;
+    let output = Command::new("/usr/bin/codesign")
+        .args(["--display", "--verbose=4"])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .find_map(|line| line.strip_prefix("CDHash="))
+        .filter(|hash| {
+            matches!(hash.len(), 40 | 64) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .map(str::to_owned)
+}
+
+fn status(paths: &SaverPaths) -> Result<ScreenSaverStatus, String> {
+    status_with_identity(paths, verified_code_identity, macos_27_or_newer())
+}
+
+async fn run_saver_operation<T: Send + 'static>(
+    operation: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = SAVER_OPERATIONS
+            .lock()
+            .map_err(|_| "A screen saver operation failed")?;
+        operation()
+    })
+    .await
+    .map_err(|error| format!("Cannot complete the screen saver operation: {error}"))?
+}
+
 #[tauri::command]
-pub fn screensaver_status(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
-    status(&SaverPaths::for_app(&app)?)
+pub async fn screensaver_status(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
+    let paths = SaverPaths::for_app(&app)?;
+    run_saver_operation(move || status(&paths)).await
 }
 
 fn request_install_with(
@@ -326,22 +383,28 @@ fn uninstall_bundle(paths: &SaverPaths) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn install_screensaver(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
+pub async fn install_screensaver(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
     let paths = SaverPaths::for_app(&app)?;
-    if !macos_27_or_newer() {
-        return Err("The screen saver needs macOS 27 or newer".into());
-    }
-    request_install(&paths)?;
-    let mut current = status(&paths)?;
-    current.installation_pending = !current.installed;
-    Ok(current)
+    run_saver_operation(move || {
+        if !macos_27_or_newer() {
+            return Err("The screen saver needs macOS 27 or newer".into());
+        }
+        request_install(&paths)?;
+        let mut current = status(&paths)?;
+        current.installation_pending = true;
+        Ok(current)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn uninstall_screensaver(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
+pub async fn uninstall_screensaver(app: tauri::AppHandle) -> Result<ScreenSaverStatus, String> {
     let paths = SaverPaths::for_app(&app)?;
-    uninstall_bundle(&paths)?;
-    status(&paths)
+    run_saver_operation(move || {
+        uninstall_bundle(&paths)?;
+        status(&paths)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -406,6 +469,15 @@ mod tests {
     }
 
     #[test]
+    fn screen_saver_operations_run_off_the_calling_thread() {
+        let calling_thread = std::thread::current().id();
+        let worker_thread =
+            tauri::async_runtime::block_on(run_saver_operation(|| Ok(std::thread::current().id())))
+                .unwrap();
+        assert_ne!(worker_thread, calling_thread);
+    }
+
+    #[test]
     fn installation_opens_only_after_verifying_source_and_destination() {
         let fixture = Fixture::new();
         Fixture::bundle(&fixture.paths.source, BUNDLE_ID);
@@ -461,6 +533,57 @@ mod tests {
         request_install_with(&fixture.paths, fake_verify, open).unwrap();
         assert!(opened.get());
         assert!(!directory.exists());
+    }
+
+    #[test]
+    fn detects_a_different_signed_build_even_when_versions_match() {
+        let fixture = Fixture::new();
+        Fixture::bundle(&fixture.paths.source, BUNDLE_ID);
+        Fixture::bundle(&fixture.paths.installed, BUNDLE_ID);
+        let same =
+            status_with_identity(&fixture.paths, |_| Some("same-hash".into()), true).unwrap();
+        assert_eq!(same.matches_source, Some(true));
+        let different = status_with_identity(
+            &fixture.paths,
+            |path| {
+                Some(
+                    if path == fixture.paths.source {
+                        "new-hash"
+                    } else {
+                        "old-hash"
+                    }
+                    .into(),
+                )
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(different.matches_source, Some(false));
+        assert_eq!(
+            status_with_identity(&fixture.paths, |_| None, true)
+                .unwrap()
+                .matches_source,
+            None
+        );
+        fs::remove_dir_all(&fixture.paths.installed).unwrap();
+        Fixture::bundle(&fixture.paths.legacy_installed, LEGACY_BUNDLE_ID);
+        let legacy = status_with_identity(
+            &fixture.paths,
+            |path| {
+                Some(
+                    if path == fixture.paths.source {
+                        "new-hash"
+                    } else {
+                        "old-hash"
+                    }
+                    .into(),
+                )
+            },
+            true,
+        )
+        .unwrap();
+        assert!(legacy.installed);
+        assert_eq!(legacy.matches_source, Some(false));
     }
 
     #[test]
@@ -574,6 +697,44 @@ mod tests {
         uninstall_bundle_with(&fixture.paths, fake_verify, |path| fixture.trash(path)).unwrap();
         assert!(!fixture.paths.installed.exists());
         assert!(fixture.root.join("trash-copy").is_dir());
+    }
+
+    #[test]
+    #[ignore = "requires a signed test module and its Developer ID signing identity"]
+    fn verified_identity_detects_same_version_with_different_contents() {
+        let fixture = Fixture::new();
+        let source = std::env::var_os("LIDSCAPE_SAVER_SIGNED_TEST_MODULE")
+            .expect("set LIDSCAPE_SAVER_SIGNED_TEST_MODULE");
+        let identity = std::env::var_os("LIDSCAPE_SAVER_SIGNING_IDENTITY")
+            .expect("set LIDSCAPE_SAVER_SIGNING_IDENTITY");
+        for destination in [&fixture.paths.source, &fixture.paths.installed] {
+            assert!(Command::new("/usr/bin/ditto")
+                .arg(&source)
+                .arg(destination)
+                .status()
+                .unwrap()
+                .success());
+        }
+        let same = status_with_identity(&fixture.paths, verified_code_identity, true).unwrap();
+        assert_eq!(same.matches_source, Some(true));
+        fs::write(
+            fixture
+                .paths
+                .installed
+                .join("Contents/Resources/test-update-marker"),
+            "different build",
+        )
+        .unwrap();
+        assert!(Command::new("/usr/bin/codesign")
+            .args(["--force", "--sign"])
+            .arg(identity)
+            .args(["--options", "runtime", "--timestamp=none"])
+            .arg(&fixture.paths.installed)
+            .status()
+            .unwrap()
+            .success());
+        let different = status_with_identity(&fixture.paths, verified_code_identity, true).unwrap();
+        assert_eq!(different.matches_source, Some(false));
     }
 
     #[test]
