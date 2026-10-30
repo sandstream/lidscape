@@ -1,6 +1,6 @@
 # Motif model: draft for review
 
-Date: 2026-10-30. Status: draft. Peter has not approved this specification.
+Date: 2026-10-30. Status: draft for review.
 
 This document proposes the result for phase 2 of the [motif plan](2026-10-29-motifs-styles-screensaver-plan.md). It does not change the product.
 The car and teddy bear descriptions are design proposals, not finished research or drawings.
