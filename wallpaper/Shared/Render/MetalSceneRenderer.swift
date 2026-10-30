@@ -23,6 +23,8 @@ final class MetalSceneRenderer: @unchecked Sendable {
     private var loaded = false
     private var paused = false
     private var captureSchedule = WallpaperCaptureSchedule()
+    private var watchdog = WallpaperFrameWatchdog()
+    private var captureGeneration = 0
     private var pending = false
     private var frames = 0
     private var measuredFrames = 0
@@ -52,6 +54,10 @@ final class MetalSceneRenderer: @unchecked Sendable {
         DispatchQueue.main.async { [self] in
             guard !running else { onFirstFrameProcessed?(false); return }
             running = true
+            frames = 0
+            loaded = false
+            watchdog.reset()
+            captureGeneration += 1
             sensorToken = ProbeLidSensor.shared.subscribe()
             displayLayer.videoGravity = .resizeAspectFill
             callback = onFirstFrameProcessed
@@ -82,7 +88,11 @@ final class MetalSceneRenderer: @unchecked Sendable {
                 renderLog("[Lidscape Web Sensor] Local page loaded in extension")
             }, onError: { [weak self] error in
                 renderLog("[Lidscape Web Sensor] Navigation failed: \(error.localizedDescription)")
-                self?.finish(false)
+                guard let self else { return }
+                self.loaded = false
+                self.captureGeneration += 1
+                self.pending = false
+                if self.frames == 0 { self.finish(false) }
             })
             navigationDelegate = delegate
             view.navigationDelegate = delegate
@@ -107,7 +117,8 @@ final class MetalSceneRenderer: @unchecked Sendable {
             webView = view
             let page = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web")!
             renderLog("[Lidscape Web Sensor] Starting local page navigation")
-            view.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+            let initialNavigation = view.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+            delegate.track(initialNavigation)
             scheduleCapture()
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                 guard let self, self.running, self.callback != nil else { return }
@@ -126,27 +137,62 @@ final class MetalSceneRenderer: @unchecked Sendable {
         }
     }
 
+    @MainActor private func checkWatchdog(frameAge: TimeInterval?, in webView: WKWebView) {
+        guard frames > 0 else { return }
+        switch watchdog.observe(now: ProcessInfo.processInfo.systemUptime, frameAge: frameAge) {
+        case .none:
+            break
+        case .reload:
+            // Ignore callbacks from the page being replaced. The timer can then
+            // recover even when an evaluation or snapshot never calls back.
+            captureGeneration += 1
+            pending = false
+            loaded = false
+            navigationDelegate?.track(nil)
+            webView.stopLoading()
+            navigationDelegate?.track(webView.reload())
+            renderLog("[Lidscape Web Sensor] Stale frame; reloading page")
+        case .exhausted:
+            renderLog("[Lidscape Web Sensor] Frame recovery stopped after three attempts")
+        }
+    }
+
     @MainActor private func capture() {
-        guard running, !paused, loaded, !pending, let webView else { return }
+        guard running, !paused, let webView else { return }
+        let currentGeneration = captureGeneration
+        checkWatchdog(frameAge: nil, in: webView)
+        guard captureGeneration == currentGeneration, loaded, !pending else { return }
         refreshSettings(in: webView)
         guard loaded else { return }
         pending = true
+        let generation = captureGeneration
         let angle = ProbeLidSensor.shared.angle
         let update = angle.map { "window.lidscapeSaverSetLidAngle?.(\($0));" }
             ?? "window.lidscapeSaverClearLidAngle?.();"
-        let js = "\(update) \(pointerScript()) Boolean(window.lidscapeSaverLastRender)"
+        let js = "\(update) \(pointerScript()) window.lidscapeSaverLastRender || 0"
         webView.evaluateJavaScript(js) { [weak self] result, error in
-            guard let self, self.running else { return }
+            guard let self, self.running, self.captureGeneration == generation else { return }
             guard !self.paused else { self.pending = false; return }
-            guard error == nil, (result as? Bool) == true else {
-                if let error { renderLog("[Lidscape Web Sensor] Script error: \(error.localizedDescription)") }
-                self.pending = false
+            let frameAge: TimeInterval?
+            if error == nil, let timestamp = result as? NSNumber,
+               timestamp.doubleValue.isFinite, timestamp.doubleValue > 0 {
+                let age = Date().timeIntervalSince1970 - timestamp.doubleValue / 1000
+                frameAge = age.isFinite && age >= -1 ? max(0, age) : nil
+            } else { frameAge = nil }
+            guard let frameAge, frameAge < 2, let timestamp = result as? NSNumber else {
+                self.checkWatchdog(frameAge: frameAge, in: webView)
+                if self.captureGeneration == generation { self.pending = false }
                 return
             }
             webView.takeSnapshot(with: nil) { [weak self] image, error in
-                guard let self, self.running else { return }
+                guard let self, self.running, self.captureGeneration == generation else { return }
                 defer { self.pending = false }
                 guard !self.paused else { return }
+                let snapshotAge = Date().timeIntervalSince1970 - timestamp.doubleValue / 1000
+                guard snapshotAge.isFinite, snapshotAge >= -1, snapshotAge < 2 else {
+                    self.checkWatchdog(frameAge: snapshotAge, in: webView)
+                    return
+                }
                 guard let image, let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
                       let sample = self.makeSample(cgImage) else {
                     renderLog("[Lidscape Web Sensor] Snapshot failed: \(error?.localizedDescription ?? "invalid image")")
@@ -159,10 +205,13 @@ final class MetalSceneRenderer: @unchecked Sendable {
                 self.frames += 1
                 self.measuredFrames += 1
                 if self.frames == 1 {
+                    self.watchdog.firstFrame(at: ProcessInfo.processInfo.systemUptime)
                     CATransaction.flush()
                     renderLog("[Lidscape Web Sensor] First snapshot enqueued in remote layer")
                     self.finish(true)
-                } else if Date().timeIntervalSince(self.measureStart) >= 10 {
+                } else {
+                    self.checkWatchdog(frameAge: max(0, snapshotAge), in: webView)
+                    guard Date().timeIntervalSince(self.measureStart) >= 10 else { return }
                     let elapsed = Date().timeIntervalSince(self.measureStart)
                     let fps = Double(self.measuredFrames) / elapsed
                     renderLog("[Lidscape Web Sensor] Snapshot rate: \(String(format: "%.2f", fps)) fps over \(String(format: "%.1f", elapsed)) s; total \(self.frames)")
@@ -192,7 +241,8 @@ final class MetalSceneRenderer: @unchecked Sendable {
             loaded = false
             webView.configuration.userContentController.removeAllUserScripts()
             webView.configuration.userContentController.addUserScript(WKUserScript(source: next.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-            webView.reload()
+            navigationDelegate?.track(nil)
+            navigationDelegate?.track(webView.reload())
             renderLog("[Lidscape Web Sensor] Wallpaper settings changed")
         } catch { renderLog("[Lidscape Web Sensor] Cannot read wallpaper settings: \(error.localizedDescription)") }
     }
@@ -231,8 +281,12 @@ final class MetalSceneRenderer: @unchecked Sendable {
     func stop(preservingDisplayLayer: Bool = false) {
         DispatchQueue.main.async { [self] in
             running = false
+            captureGeneration += 1
+            pending = false
+            watchdog.reset()
             if let sensorToken { ProbeLidSensor.shared.unsubscribe(sensorToken); self.sensorToken = nil }
             timer?.invalidate(); timer = nil
+            navigationDelegate?.track(nil)
             webView?.stopLoading(); webView?.navigationDelegate = nil; webView = nil; navigationDelegate = nil
             offscreenWindow?.orderOut(nil); offscreenWindow?.close(); offscreenWindow = nil
             finish(false)
@@ -250,6 +304,12 @@ final class MetalSceneRenderer: @unchecked Sendable {
             let nextPaused = policy == .paused
             if paused != nextPaused {
                 paused = nextPaused
+                captureGeneration += 1
+                pending = false
+                watchdog.reset()
+                if !nextPaused && frames > 0 {
+                    watchdog.firstFrame(at: ProcessInfo.processInfo.systemUptime)
+                }
                 webView?.evaluateJavaScript("window.lidscapeSaverSetPaused?.(\(nextPaused));", completionHandler: nil)
             }
             scheduleCapture()
@@ -262,21 +322,37 @@ final class MetalSceneRenderer: @unchecked Sendable {
 private final class ProbeNavigationDelegate: NSObject, WKNavigationDelegate {
     let onLoad: () -> Void
     let onError: (Error) -> Void
+    private var tracker = WallpaperNavigationTracker<WKNavigation>()
+
     init(onLoad: @escaping () -> Void, onError: @escaping (Error) -> Void) {
         self.onLoad = onLoad; self.onError = onError
     }
+    func track(_ navigation: WKNavigation?) { tracker.track(navigation) }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        renderLog("[Lidscape Web Sensor] Navigation started")
+        if tracker.accepts(navigation) { renderLog("[Lidscape Web Sensor] Navigation started") }
     }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        renderLog("[Lidscape Web Sensor] Navigation committed")
+        if tracker.accepts(navigation) { renderLog("[Lidscape Web Sensor] Navigation committed") }
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        tracker.track(nil)
         renderLog("[Lidscape Web Sensor] Web content process terminated")
         onError(NSError(domain: "LidscapeWebNetwork", code: 1,
             userInfo: [NSLocalizedDescriptionKey: "Web content process terminated."]))
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onLoad() }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { onError(error) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { onError(error) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard tracker.accepts(navigation) else { return }
+        tracker.track(nil)
+        onLoad()
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard tracker.accepts(navigation) else { return }
+        tracker.track(nil)
+        onError(error)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard tracker.accepts(navigation) else { return }
+        tracker.track(nil)
+        onError(error)
+    }
 }

@@ -93,3 +93,70 @@ struct WallpaperCaptureSchedule {
         return true
     }
 }
+
+/// Detects a stalled page after it has rendered at least one image.
+/// Times use a monotonic clock. `frameAge` comes from the page in seconds.
+struct WallpaperFrameWatchdog {
+    enum Action: Equatable { case none, reload, exhausted }
+
+    private static let staleAfter: TimeInterval = 2
+    private static let retryAfter: TimeInterval = 3
+    private static let stableAfter: TimeInterval = 10
+    private static let maxReloads = 3
+    private var armed = false
+    private var lastFreshAt: TimeInterval?
+    private var stableSince: TimeInterval?
+    private var lastReloadAt: TimeInterval?
+    private var reloads = 0
+    private var reportedExhaustion = false
+
+    /// Arm after the first displayed image, or when resuming an active scene.
+    mutating func firstFrame(at now: TimeInterval) {
+        guard now.isFinite, !armed else { return }
+        armed = true
+        lastFreshAt = now
+        stableSince = now
+    }
+
+    /// Missing values retain the last fresh timestamp until it becomes stale.
+    mutating func observe(now: TimeInterval, frameAge: TimeInterval?) -> Action {
+        guard armed, now.isFinite, let previous = lastFreshAt else { return .none }
+        if let age = frameAge, age.isFinite, age >= 0, age < Self.staleAfter {
+            lastFreshAt = max(previous, now - age)
+            if stableSince == nil { stableSince = now }
+            if let stableSince, now - stableSince >= Self.stableAfter {
+                reloads = 0
+                lastReloadAt = nil
+                reportedExhaustion = false
+            }
+            return .none
+        }
+        let explicitlyStale = frameAge.map { $0.isFinite && $0 >= Self.staleAfter } ?? false
+        guard explicitlyStale || now - previous >= Self.staleAfter else { return .none }
+        stableSince = nil
+        if let lastReloadAt, now - lastReloadAt < Self.retryAfter { return .none }
+        if reloads >= Self.maxReloads {
+            guard !reportedExhaustion else { return .none }
+            reportedExhaustion = true
+            return .exhausted
+        }
+        lastReloadAt = now
+        reloads += 1
+        return .reload
+    }
+
+    /// Pause and resume start a fresh recovery period.
+    mutating func reset() { self = Self() }
+}
+
+/// Only callbacks from the most recently started navigation may change state.
+struct WallpaperNavigationTracker<Token: AnyObject> {
+    private var current: Token?
+
+    mutating func track(_ token: Token?) { current = token }
+
+    func accepts(_ token: Token?) -> Bool {
+        guard let current, let token else { return false }
+        return current === token
+    }
+}
