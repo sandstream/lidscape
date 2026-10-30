@@ -18,6 +18,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: npx playwright install chromium
       - run: npm test
+      - name: Check wallpaper ownership and acquire replies
+        run: |
+          sh wallpaper/tests/check-wallpaper-retirement-tickets.sh
+          sh wallpaper/tests/check-wallpaper-state-handoff.sh
+          sh wallpaper/tests/check-wallpaper-owner-invalidation.sh
+          sh wallpaper/tests/check-wallpaper-handoff-owner-change.sh
+          sh wallpaper/tests/check-wallpaper-acquire-cancellation.sh
       - run: node tools/check-cities.mjs
       - run: node tools/check-camera.mjs
       - run: node tools/check-lid.mjs
