@@ -360,25 +360,65 @@ test('stopping the screen saver closes its sensor connection', {
   let closeFrameSeen = false
   let stopRequested = false
   let closeWhileRunning = false
+  let mainLoopReady = false
   let child
+  let stage = 'starting server'
+  let output = ''
+  let errorOutput = ''
+  const finishWhenClosed = () => {
+    if (disconnected && mainLoopReady && child?.exitCode === null) child.stdin.end('D')
+  }
   const stopChild = () => {
     if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   }
-  t.signal.addEventListener('abort', stopChild, { once: true })
+  const onAbort = () => {
+    t.diagnostic(`Sensor teardown timed out at ${stage}: connected=${connected}, angle=${receivedAngle}, closeFrame=${closeFrameSeen}, disconnected=${disconnected}, mainLoopReady=${mainLoopReady}, output=${JSON.stringify(output)}, stderr=${JSON.stringify(errorOutput)}`)
+    stopChild()
+  }
+  t.signal.addEventListener('abort', onAbort, { once: true })
   server.on('upgrade', (request, socket) => {
     connected = true
+    stage = 'WebSocket connected'
     connection = socket
     socket.on('error', () => {})
     socket.on('close', () => {
       disconnected = true
+      stage = 'WebSocket closed'
       closeWhileRunning = child?.exitCode === null
-      if (closeWhileRunning) child.stdin.end('D')
+      if (closeWhileRunning) finishWhenClosed()
     })
+    let buffered = Buffer.alloc(0)
     socket.on('data', chunk => {
-      if ((chunk[0] & 0x0f) === 8) {
-        closeFrameSeen = true
-        if (!stopRequested) closeBeforeStop = true
-        socket.end(Buffer.from([0x88, 0x00]))
+      buffered = Buffer.concat([buffered, chunk])
+      while (buffered.length >= 2) {
+        const opcode = buffered[0] & 0x0f
+        const masked = (buffered[1] & 0x80) !== 0
+        let length = buffered[1] & 0x7f
+        let headerLength = 2
+        if (length === 126) {
+          if (buffered.length < 4) return
+          length = buffered.readUInt16BE(2)
+          headerLength = 4
+        } else if (length === 127) {
+          socket.destroy(new Error('Unexpected large WebSocket frame'))
+          return
+        }
+        const maskLength = masked ? 4 : 0
+        const frameLength = headerLength + maskLength + length
+        if (buffered.length < frameLength) return
+        const payload = Buffer.from(buffered.subarray(headerLength + maskLength, frameLength))
+        if (masked) {
+          for (let i = 0; i < payload.length; i++) payload[i] ^= buffered[headerLength + (i % 4)]
+        }
+        buffered = buffered.subarray(frameLength)
+        if (opcode === 8) {
+          closeFrameSeen = true
+          stage = 'WebSocket close frame received'
+          if (!stopRequested) closeBeforeStop = true
+          socket.end(Buffer.concat([Buffer.from([0x88, payload.length]), payload]))
+          return
+        }
+        if (opcode === 9) socket.write(Buffer.concat([Buffer.from([0x8a, payload.length]), payload]))
       }
     })
     const key = request.headers['sec-websocket-key']
@@ -396,6 +436,22 @@ test('stopping the screen saver closes its sensor connection', {
     })
     const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
     const testSource = `${source}
+private final class SensorTestInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Data?
+    func waitForByte() -> Data {
+        lock.lock(); value = nil; lock.unlock()
+        DispatchQueue.global().async { [self] in
+            let data = FileHandle.standardInput.readData(ofLength: 1)
+            lock.lock(); value = data; lock.unlock()
+        }
+        while true {
+            lock.lock(); let result = value; lock.unlock()
+            if let result { return result }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
+}
 extension LidscapeSaverView {
     func exerciseSensorDisconnect(port: Int) {
         sensorActive = true
@@ -411,31 +467,38 @@ extension LidscapeSaverView {
         }
         precondition(lastLidAngle == 120, "The server must send a real sensor message")
         FileHandle.standardOutput.write(Data("angle-received\\n".utf8))
-        let signal = FileHandle.standardInput.readData(ofLength: 1)
+        let input = SensorTestInput()
+        let signal = input.waitForByte()
         precondition(signal == Data([83]), "The test must signal the stop")
         stopAnimation()
-        let closed = FileHandle.standardInput.readData(ofLength: 1)
+        DispatchQueue.main.async { FileHandle.standardOutput.write(Data("main-loop-active\\n".utf8)) }
+        let closed = input.waitForByte()
         precondition(closed == Data([68]), "The test must observe the closed connection")
     }
 }
 let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
 view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
 `
+    stage = 'compiling test process'
     const file = join(dir, 'disconnect.swift')
     const executable = join(dir, 'disconnect')
     await writeFile(file, testSource)
     execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
       '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    stage = 'starting test process'
     child = spawn(executable, [String(server.address().port)])
     child.stdin.on('error', () => {})
-    let output = ''
-    let errorOutput = ''
     child.stdout.on('data', chunk => {
       output += chunk
       if (!receivedAngle && output.includes('angle-received')) {
         receivedAngle = true
+        stage = 'sensor angle received; requesting stop'
         stopRequested = true
         child.stdin.write('S')
+      }
+      if (!mainLoopReady && output.includes('main-loop-active')) {
+        mainLoopReady = true
+        finishWhenClosed()
       }
     })
     child.stderr.on('data', chunk => { errorOutput += chunk })
@@ -445,11 +508,11 @@ view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
     })
     if (status !== 0) throw new Error(`Sensor test failed (${status}): ${errorOutput}`)
     if (!connected || !receivedAngle) throw new Error('The sensor connection did not receive its angle')
-    if (!closeFrameSeen || !disconnected || closeBeforeStop || !closeWhileRunning) {
+    if (!closeFrameSeen || !disconnected || closeBeforeStop || !closeWhileRunning || !mainLoopReady) {
       throw new Error('The sensor connection did not close after the screen saver stopped while its process was running')
     }
   } finally {
-    t.signal.removeEventListener('abort', stopChild)
+    t.signal.removeEventListener('abort', onAbort)
     const childClosed = child?.exitCode === null && child.signalCode === null
       ? new Promise(resolve => child.once('close', resolve))
       : null
