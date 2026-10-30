@@ -65,6 +65,9 @@ python3 scripts/check-macos-target.py "$APP/Contents/Info.plist" "$APP/Contents/
 SAVER="$APP/Contents/Resources/LidscapeScreenSaver.saver"
 test -f "$SAVER/Contents/Resources/web/saver.js" || { echo "FAIL: screen saver missing"; exit 1; }
 codesign --verify --deep --strict "$SAVER" || { echo "FAIL: screen saver signature invalid"; exit 1; }
+python3 scripts/check-macos-target.py "$SAVER/Contents/Info.plist" "$SAVER/Contents/MacOS/LidscapeSaver"
+SENSOR_APP="$SAVER/Contents/Resources/Lidscape Sensor.app"
+python3 scripts/check-macos-target.py "$SENSOR_APP/Contents/Info.plist" "$SENSOR_APP/Contents/MacOS/lid-bridge"
 WALLPAPER_ARCHIVE="$APP/Contents/Resources/Lidscape Wallpaper.zip"
 test -f "$WALLPAPER_ARCHIVE" || { echo "FAIL: wallpaper archive missing"; exit 1; }
 /usr/bin/ditto -x -k "$WALLPAPER_ARCHIVE" "$WALLPAPER_CHECK"
