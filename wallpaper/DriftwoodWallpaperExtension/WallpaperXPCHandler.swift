@@ -1067,9 +1067,9 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol {
         }
 
         acquiredSurfaceKeys.remove(key)
-        guard WallpaperState.shared.pauseUnhostedSurface(for: key) else {
+        guard WallpaperState.shared.pauseUnhostedSurface(for: key, owner: acquisitionOwner) else {
             extensionLog(
-                "=== INVALIDATE === \(targetDescription) already unhosted → ignore"
+                "=== INVALIDATE === \(targetDescription) unhosted or owned by another connection → ignore"
             )
             reply(nil)
             return

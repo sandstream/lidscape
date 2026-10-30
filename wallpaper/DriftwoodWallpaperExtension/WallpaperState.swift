@@ -374,9 +374,10 @@ final class WallpaperState: Sendable {
     /// Mark one exact surface unhosted and freeze its producer immediately while retaining
     /// its CAContext for teardown grace. Must run on `RenderQueue.serial`.
     @discardableResult
-    func pauseUnhostedSurface(for key: DisplayKey) -> Bool {
+    func pauseUnhostedSurface(for key: DisplayKey, owner: UUID) -> Bool {
         let surface = lock.withLock { state -> WallpaperSurface? in
-            guard var context = state.contexts[key], context.isHosted else {
+            guard var context = state.contexts[key], context.isHosted,
+                  context.acquisitionOwner == owner else {
                 return nil
             }
             context.isHosted = false
