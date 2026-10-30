@@ -455,7 +455,7 @@ export const stockholm = {
   id: 'stockholm',
   name: 'Stockholm',
   lat: 59.324,
-  lon: 18.068,
+  lon: 18.066,
   // Blue hour over Riddarfjärden: deep blue overhead, the last warm light low in the west.
   sky: { top: '#14203d', horizon: '#e3a06e', blend: [0.44, 0.64] },
   windows: { dark: '#2b3240', litShare: 0.65 },

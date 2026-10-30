@@ -1,5 +1,7 @@
 # Helsingfors (Helsinki)
 
+Coordinates: 60.164° N, 24.932° E. Source: [Natural Earth populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/), Helsinki point, version 5.1.2.
+
 Proportion ratios are visual estimates for drawing. Heights and years are sourced.
 
 ## Viewpoint
@@ -55,6 +57,32 @@ The water of Eteläsatama (the South Harbour), as seen from a ferry or the Kataj
 - Silhouette: a ring on two A-frame legs; spokes; small cabins round the rim.
 - Local cue: the wheel in front of the gold domes.
 
+## Traits
+
+- snow: true. On 13 January 2021 the Finnish Meteorological Institute recorded
+  15 cm of new snow in one day at Kaisaniemi in central Helsinki, and 36 cm at
+  Helsinki-Vantaa airport.
+- adventStars: true, with a weaker source than the other traits. Yle says lit
+  window stars came from Germany, became popular in Sweden in the 1930s and
+  came to Finland after the Second World War. Yle does not say how common they
+  are in Finnish windows today.
+- ice: true. The water of Eteläsatama was ice-covered in the winter of 2018. In
+  2020 an old ship kept the harbour open by circling 400 times in 24 hours.
+
+## Rights
+
+- Freedom of panorama: buildings may be depicted freely, also for commercial
+  use. The statute is tekijänoikeuslaki (404/1961), § 25 a: "Rakennuksen saa
+  vapaasti kuvata."
+- A work of art placed permanently in a public place may also be depicted. If
+  the work is the main subject of the picture, the picture may not be used for
+  commercial purposes.
+- Copyright lasts 70 years after the year of the author's death. The building
+  rule has no time limit, so the death year of an architect does not limit the
+  drawing.
+- Special protection: § 25 a names none. I found no rule on the lighting of
+  these landmarks.
+
 ## Filler
 
 The Empire-style centre: low neoclassical blocks with low hipped tin roofs, painted pale yellow, cream, light blue and white, with white trim. Katajanokka: Jugend (Art Nouveau) blocks in grey granite and plaster with towers and steep roofs.
@@ -81,3 +109,7 @@ The Empire-style centre: low neoclassical blocks with low hipped tin roofs, pain
 - Kaupungintalo, 1833, Engel: https://fi.wikipedia.org/wiki/Helsingin_kaupungintalo
 - Old Market Hall, 1889, Nyström: https://en.wikipedia.org/wiki/Old_Market_Hall,_Helsinki
 - SkyWheel, 40 m, 30 cabins, 2014: https://fi.wikipedia.org/wiki/SkyWheel_Helsinki
+- Snow, 13 January 2021, Kaisaniemi and Helsinki-Vantaa: https://www.mtvuutiset.fi/artikkeli/senttia-vaille-ennatys-helsinki-vantaalla-mitattiin-keskiviikkona-historiallinen-lumipeite/8038126
+- Window stars, Germany, Sweden 1930s, Finland after the war: https://yle.fi/a/3-9990945
+- Ice in Eteläsatama 2018, harbour kept open in 2020: https://en.wikipedia.org/wiki/South_Harbour,_Helsinki
+- Tekijänoikeuslaki § 25 a, 70 years: https://www.finlex.fi/fi/laki/ajantasa/1961/19610404
