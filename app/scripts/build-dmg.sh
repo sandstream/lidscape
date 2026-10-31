@@ -57,6 +57,9 @@ for b in lidscape lid-bridge; do
   test -x "$APP/Contents/MacOS/$b" || { echo "FAIL: $b missing"; exit 1; }
   codesign --verify --strict "$APP/Contents/MacOS/$b" || { echo "FAIL: $b is not signed"; exit 1; }
 done
+SAVER="$APP/Contents/Resources/LidscapeScreenSaver.saver"
+test -f "$SAVER/Contents/Resources/web/saver.js" || { echo "FAIL: screen saver missing"; exit 1; }
+codesign --verify --deep --strict "$SAVER" || { echo "FAIL: screen saver signature invalid"; exit 1; }
 codesign -d --entitlements - "$APP/Contents/MacOS/lidscape" 2>&1 | grep -q "com.apple.security.device.camera" \
   || { echo "FAIL: the app lacks the camera entitlement"; exit 1; }
 /usr/libexec/PlistBuddy -c "Print :NSCameraUsageDescription" "$APP/Contents/Info.plist" >/dev/null \

@@ -31,6 +31,7 @@
     <label id="map-progress-label" for="map-progress"></label>
     <input id="map-progress" type="range" min="0" max="1" step="0.001" value="0">
     <select id="map-lang"></select>
+    <button id="map-saver" type="button" hidden></button>
     <a href="https://github.com/sandstream/lidscape/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener"></a>
   </aside>
 
@@ -55,6 +56,7 @@
       <button id="lights-btn" type="button"></button>
       <select id="camera" hidden></select>
       <button id="help-btn" type="button"></button>
+      <button id="city-saver" type="button" hidden></button>
     </div>
     <p id="hud-hint"></p>
     <p id="hud-update" role="status" hidden><span></span> <button type="button"></button> <button type="button"></button></p>
@@ -75,6 +77,18 @@
     <h2></h2>
     <ul></ul>
     <button type="button" autofocus></button>
+  </dialog>
+
+  <dialog id="saver-settings" aria-labelledby="saver-title">
+    <h2 id="saver-title"></h2>
+    <p id="saver-description"></p>
+    <p id="saver-status" role="status" aria-live="polite"></p>
+    <div id="saver-actions">
+      <button id="saver-install" type="button"></button>
+      <button id="saver-reinstall" type="button" hidden></button>
+      <button id="saver-system" type="button"></button>
+      <button id="saver-close" type="button"></button>
+    </div>
   </dialog>
 
   <script type="module" src="src/main.js"></script>

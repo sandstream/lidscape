@@ -7,15 +7,27 @@ const CLOSED_DEG = 50
 const OPEN_DEG = 105
 const RETRY_MS = 3000
 
+export function lidProgressForAngle(angle) {
+  if (typeof angle !== 'number' || !Number.isFinite(angle)) return null
+  return Math.min(1, Math.max(0, (angle - CLOSED_DEG) / (OPEN_DEG - CLOSED_DEG)))
+}
+
 export function connectLid(onChange) {
   const state = { connected: false, noSensor: false, angle: null, progress: null }
   let socket
+  let retry
+  let stopped = false
+
+  function reconnect() {
+    if (!stopped) retry = setTimeout(open, RETRY_MS)
+  }
 
   function open() {
+    if (stopped) return
     try {
       socket = new WebSocket(URL)
     } catch {
-      setTimeout(open, RETRY_MS)
+      reconnect()
       return
     }
     socket.onopen = () => {
@@ -39,7 +51,7 @@ export function connectLid(onChange) {
       }
       if (typeof msg.angle !== 'number') return
       state.angle = msg.angle
-      state.progress = Math.min(1, Math.max(0, (msg.angle - CLOSED_DEG) / (OPEN_DEG - CLOSED_DEG)))
+      state.progress = lidProgressForAngle(msg.angle)
       onChange(state)
     }
     socket.onclose = () => {
@@ -47,10 +59,15 @@ export function connectLid(onChange) {
       state.connected = false
       state.progress = null
       if (was) onChange(state)
-      setTimeout(open, RETRY_MS)
+      reconnect()
     }
   }
 
   open()
+  state.disconnect = () => {
+    stopped = true
+    if (retry) clearTimeout(retry)
+    socket?.close?.()
+  }
   return state
 }

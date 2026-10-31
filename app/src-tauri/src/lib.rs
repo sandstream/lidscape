@@ -1,4 +1,5 @@
 mod update;
+mod screensaver;
 
 
 use std::path::PathBuf;
@@ -71,7 +72,14 @@ struct Bridge(Mutex<Option<Child>>);
 
 pub fn run() {
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![check_update, open_link])
+        .invoke_handler(tauri::generate_handler![
+            check_update,
+            open_link,
+            screensaver::screensaver_status,
+            screensaver::install_screensaver,
+            screensaver::uninstall_screensaver,
+            screensaver::open_screensaver_settings,
+        ])
         .setup(|app| {
             let child = match Command::new(bridge_path()).spawn() {
                 Ok(child) => Some(child),

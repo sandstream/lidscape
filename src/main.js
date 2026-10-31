@@ -18,6 +18,7 @@ import { createTracker } from './tracking.js'
 import { LANGUAGES, pickLang, local } from './lang/index.js'
 import { watchUpdates } from './update.js'
 import { setupHowTo } from './howto.js'
+import { setupScreenSaverSettings } from './screensaver-settings.js'
 
 // The screen is modelled at real size: MacBook Pro 14" is about 30 × 19.5 cm.
 const SCREEN_H = 19.5
@@ -321,6 +322,7 @@ for (const li of document.querySelectorAll('#hud-status li')) {
 
 watchUpdates({ t, hud })
 setupHowTo({ t, lang, theme, variant })
+setupScreenSaverSettings({ t })
 
 function setStatus(source, value) {
   document.querySelector(`[data-source="${source}"]`).dataset.state = value
