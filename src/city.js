@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { rng } from './random.js'
 import { buildEffects } from './effects.js'
 import { paintFacades } from './facades.js'
+import { bandHeight, patchPuppet, stepSpring } from './movement.js'
 
 const CARD_DEPTH = 0.22
 const SPAN = 0.62 // share of progress each card needs to stand up
@@ -416,8 +417,9 @@ function splitCapsSides(geo) {
   for (const g of geo.groups) out[g.materialIndex === 0 ? 'caps' : 'sides'].push(g)
   const take = (groups) => {
     const part = new THREE.BufferGeometry()
-    for (const name of ['position', 'normal', 'uv']) {
+    for (const name of ['position', 'normal', 'uv', 'puppet']) {
       const a = geo.attributes[name]
+      if (!a) continue
       const size = a.itemSize
       const count = groups.reduce((n, g) => n + g.count, 0)
       const arr = new Float32Array(count * size)
@@ -493,6 +495,41 @@ function repairNormals(geo, label) {
   geo.attributes.normal.needsUpdate = true
 }
 
+// Push puppet: every vertex of an item learns its bead size and its centre
+// (src/movement.js). A spire or a crown on top of a tower is an item of its
+// own: it moves with the item its foot stands on. Low, wide items (hills,
+// quays, the palace) stand still: as beads they turn into long poles.
+function setPuppetAnchors(items3d, card) {
+  for (const it of items3d) {
+    it.box = new THREE.Box3()
+    for (const { geo } of it.built3d) {
+      geo.computeBoundingBox()
+      it.box.union(geo.boundingBox)
+    }
+  }
+  const grounded = items3d.filter((it) => it.box.min.y <= 0.3)
+  for (const it of grounded) {
+    const { min, max } = it.box
+    const wide = it.item.type === 'hill' || max.x - min.x > max.y * 1.25
+    it.anchor = [(min.x + max.x) / 2, wide ? 0 : bandHeight(max.y), (it.itemIndex + card) % 2, card]
+  }
+  for (const it of items3d) {
+    if (!it.anchor) {
+      const { min, max } = it.box
+      const cx = (min.x + max.x) / 2
+      const under = grounded.filter((g) => g.box.min.x <= cx && cx <= g.box.max.x)
+      under.sort((a, b) => Math.abs(a.box.max.y - min.y) - Math.abs(b.box.max.y - min.y))
+      it.anchor = under[0]?.anchor ?? [cx, bandHeight(max.y), (it.itemIndex + card) % 2, card]
+    }
+    for (const { geo } of it.built3d) {
+      const n = geo.attributes.position.count
+      const arr = new Float32Array(n * 4)
+      for (let i = 0; i < n; i++) arr.set(it.anchor, i * 4)
+      geo.setAttribute('puppet', new THREE.BufferAttribute(arr, 4))
+    }
+  }
+}
+
 // --- Scene -------------------------------------------------------------------
 
 // litShare is the part of the windows that are lit with the lights fully on.
@@ -512,7 +549,11 @@ function windowMesh(windows, z, r, dark = WINDOW_DARK, litShare = 1) {
   return { mesh, thresholds, flicker }
 }
 
-export function buildCity(def, scene, floorY, { variant = null, settings = {} } = {}) {
+export function buildCity(def, scene, floorY, { variant = null, settings = {}, movement = 'popup', reduceMotion = false } = {}) {
+  const puppet = movement === 'puppet'
+  // One slack value per card for the push puppet shader (src/movement.js).
+  const slack = { value: new Array(16).fill(0) }
+  const bend = (material) => (puppet ? patchPuppet(material, slack) : material)
   const r = rng(def.id.length * 131)
   const edgeShade = (tint) => '#' + new THREE.Color(tint).multiplyScalar(def.edgeShade ?? 0.78).getHexString()
   const windowDark = new THREE.Color(def.windows?.dark ?? WINDOW_DARK)
@@ -523,7 +564,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
   const materials = new Map()
   const paper = (tint) => {
     if (!materials.has(tint)) {
-      materials.set(tint, new THREE.MeshStandardMaterial({ color: tint, roughness: 0.95, metalness: 0, map: tex }))
+      materials.set(tint, bend(new THREE.MeshStandardMaterial({ color: tint, roughness: 0.95, metalness: 0, map: tex })))
     }
     return materials.get(tint)
   }
@@ -624,6 +665,9 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     streaks.push({ mesh: s, phase: r() * Math.PI * 2, speed: 1.5 + r() * 2 })
   }
 
+  // Shadows of the push puppet follow its pose.
+  const depth = puppet ? patchPuppet(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), slack) : null
+
   // Cards
   const layers = def.layers.map((layerDef, index) => {
     const pivot = new THREE.Group()
@@ -642,13 +686,14 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     // that overlap on a card would otherwise lie in one plane and flicker as
     // the card turns, letting a house behind show through one in front.
     const ITEM_STEP = 0.004
+    const items3d = []
     for (const [itemIndex, item] of layerDef.items.entries()) {
       const itemDz = itemIndex * ITEM_STEP
       const built = BUILDERS[item.type](item, r)
       const parts = built.parts ?? [{ shape: built.shape }]
       const tint = item.tint || layerDef.tint || def.palette[Math.floor(r() * def.palette.length)]
       const label = `${def.id} z=${layerDef.z} ${item.type} at x=${item.x ?? item.x0}`
-      for (const part of parts) {
+      const built3d = parts.map((part) => {
         const list = Array.isArray(part.shape) ? part.shape : [part.shape]
         if (!part.dz || part.dz <= 0) {
           shapes.push(...list)
@@ -656,6 +701,15 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
         }
         const geo = extrude(list, label)
         geo.translate(0, 0, itemDz + (part.dz ?? 0))
+        return { part, geo }
+      })
+      items3d.push({ item, itemIndex, built, built3d, tint })
+      if (built.facades) regions.push(...built.facades.map((f) => ({ ...f, tint: f.tint ?? tint })))
+      windows.push(...built.windows.map((w) => ({ ...w, dz: (w.dz ?? 0) + itemDz })))
+    }
+    if (puppet) setPuppetAnchors(items3d, index)
+    for (const { built, built3d, tint } of items3d) {
+      for (const { part, geo } of built3d) {
         const key = part.facade && built.facades ? FACADE : part.tint || tint
         const { caps, sides } = splitCapsSides(geo)
         if (!pieces.has(key)) pieces.set(key, [])
@@ -664,23 +718,23 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
         if (!edges.has(edgeKey)) edges.set(edgeKey, [])
         edges.get(edgeKey).push(sides)
       }
-      if (built.facades) regions.push(...built.facades.map((f) => ({ ...f, tint: f.tint ?? tint })))
-      windows.push(...built.windows.map((w) => ({ ...w, dz: (w.dz ?? 0) + itemDz })))
     }
     // One mesh per colour per card keeps draw calls low however much detail there
     // is: the facades share one printed atlas, the card edges one paper core.
     const atlas = regions.length
-      ? new THREE.MeshStandardMaterial({ map: paintFacades(regions, r), roughness: 0.95, metalness: 0 })
+      ? bend(new THREE.MeshStandardMaterial({ map: paintFacades(regions, r), roughness: 0.95, metalness: 0 }))
       : null
     for (const [key, geos] of pieces) {
       const mesh = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos) : geos[0], key === FACADE ? atlas : paper(key))
       mesh.castShadow = true
       mesh.receiveShadow = true
+      if (puppet) mesh.customDepthMaterial = depth
       pivot.add(mesh)
     }
     for (const [key, geos] of edges) {
       const mesh = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos) : geos[0], paper(edgeShade(key)))
       mesh.castShadow = true
+      if (puppet) mesh.customDepthMaterial = depth
       pivot.add(mesh)
     }
     const win = windowMesh(windows, CARD_DEPTH + 0.015, r, windowDark, litShare)
@@ -712,7 +766,7 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
       vehicle = { def: v, group, win: vwin }
     }
 
-    return { def: layerDef, pivot, shapes, hits, windows, delay: index * LAYER_STAGGER, win, vehicle }
+    return { def: layerDef, pivot, shapes, hits, windows, delay: index * LAYER_STAGGER, win, vehicle, string: { x: 0, v: 0 } }
   })
 
   const glow = new THREE.PointLight('#ffb067', 0, 60, 1.5)
@@ -748,12 +802,24 @@ export function buildCity(def, scene, floorY, { variant = null, settings = {} } 
     if (win.mesh.instanceColor) win.mesh.instanceColor.needsUpdate = true
   }
 
+  let lastTime = null
   function update(progress, lights, time) {
     const lightLevel = lights * clamp01((progress - 0.45) / 0.45)
+    const dt = lastTime === null ? 1 : Math.max(0, time - lastTime)
+    lastTime = time
 
-    for (const layer of layers) {
+    for (const [index, layer] of layers.entries()) {
       const lp = ease(clamp01((progress - layer.delay) / SPAN))
-      layer.pivot.rotation.x = -(1 - lp) * Math.PI / 2
+      if (puppet) {
+        // The lid is the button: the cards stand, and the string tension
+        // follows the lid. The windows show only on a standing figure, as
+        // they do not bend with it.
+        stepSpring(layer.string, lp, dt, reduceMotion)
+        slack.value[index] = Math.min(1.2, Math.max(-0.25, 1 - layer.string.x))
+        layer.win.mesh.visible = Math.abs(slack.value[index]) < 0.03
+      } else {
+        layer.pivot.rotation.x = -(1 - lp) * Math.PI / 2
+      }
       paintWindows(layer.win, lightLevel, time)
 
       if (layer.vehicle) {

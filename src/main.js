@@ -85,7 +85,10 @@ for (const s of allSettings) {
   const v = Number(params.get(s.id))
   settings[s.id] = params.has(s.id) && Number.isFinite(v) ? Math.min(s.max, Math.max(s.min, v)) : s.default
 }
-const city = buildCity(cityDef, scene, -SCREEN_H / 2, { variant, settings })
+// Movement is a URL choice while Push puppet is a prototype (docs/superpowers/specs/2026-10-30-movement-research.md).
+const movement = params.get('movement') === 'puppet' ? 'puppet' : 'popup'
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+const city = buildCity(cityDef, scene, -SCREEN_H / 2, { variant, settings, movement, reduceMotion })
 const worldMap = buildWorldMap(scene, CITIES)
 let flight = params.get('view') === 'map' ? 1 : 0
 let flightTarget = params.has('enter') ? 0 : flight
