@@ -18,6 +18,47 @@ final class SettingsRefreshReply: @unchecked Sendable {
     }
 }
 
+/// Share one refresh until its work completes, even if individual replies time out.
+final class SettingsRefreshCoordinator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generation: UUID?
+    private var replies: [UUID: SettingsRefreshReply] = [:]
+
+    func join(_ reply: SettingsRefreshReply) -> (generation: UUID, token: UUID, start: Bool) {
+        lock.withLock {
+            let start = generation == nil
+            let current = generation ?? UUID()
+            generation = current
+            let token = UUID()
+            replies[token] = reply
+            return (current, token, start)
+        }
+    }
+
+    func timeout(generation: UUID, token: UUID) {
+        let reply = lock.withLock { () -> SettingsRefreshReply? in
+            guard self.generation == generation else { return nil }
+            return replies.removeValue(forKey: token)
+        }
+        reply?.finish()
+    }
+
+    func complete(generation: UUID) {
+        let pending = lock.withLock { () -> [SettingsRefreshReply] in
+            guard self.generation == generation else { return [] }
+            self.generation = nil
+            let pending = Array(replies.values)
+            replies.removeAll()
+            return pending
+        }
+        pending.forEach { $0.finish() }
+    }
+
+    func isCurrent(_ generation: UUID) -> Bool {
+        lock.withLock { self.generation == generation }
+    }
+}
+
 enum ProbeChoiceMapping {
     static func choiceID(forDisplay displayUUID: String) -> String {
         let seed = "se.sandstream.lidscape.wallpaper.choice:" + displayUUID.uppercased()

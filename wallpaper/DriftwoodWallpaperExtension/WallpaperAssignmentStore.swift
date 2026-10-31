@@ -114,6 +114,7 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
     }
 
     private let lock = OSAllocatedUnfairLock(initialState: State())
+    private let settingsRefresh = SettingsRefreshCoordinator()
     private let acknowledgmentWriteLock =
         OSAllocatedUnfairLock(initialState: ())
     private let documentsURL = FileManager.default.homeDirectoryForCurrentUser
@@ -274,30 +275,37 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
     func refreshConnectedDisplayChoices() async {
         await withCheckedContinuation { continuation in
             let reply = SettingsRefreshReply { continuation.resume() }
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1) { reply.finish() }
-            refreshConnectedDisplayChoices(attempt: 0, reply: reply)
+            let joined = settingsRefresh.join(reply)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1) {
+                self.settingsRefresh.timeout(generation: joined.generation, token: joined.token)
+            }
+            if joined.start {
+                refreshConnectedDisplayChoices(attempt: 0, generation: joined.generation)
+            }
         }
     }
 
-    private func refreshConnectedDisplayChoices(attempt: Int, reply: SettingsRefreshReply) {
+    private func refreshConnectedDisplayChoices(attempt: Int, generation: UUID) {
         DispatchQueue.global(qos: .userInitiated).async {
+            guard self.settingsRefresh.isCurrent(generation) else { return }
             switch ProbeBootstrap.prepareForSettings() {
             case .busy where attempt < 4:
                 DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) {
-                    self.refreshConnectedDisplayChoices(attempt: attempt + 1, reply: reply)
+                    self.refreshConnectedDisplayChoices(attempt: attempt + 1, generation: generation)
                 }
             case .busy, .failed:
-                reply.finish()
+                self.settingsRefresh.complete(generation: generation)
             case .ready(let data):
                 guard let prepared = try? JSONDecoder().decode(WallpaperAssignmentManifest.self, from: data),
                       self.lock.withLock({ $0.manifest != prepared }) else {
-                    reply.finish()
+                    self.settingsRefresh.complete(generation: generation)
                     return
                 }
                 Lifecycle.queue.async {
+                    guard self.settingsRefresh.isCurrent(generation) else { return }
                     self.reload(applyToHostedSurfaces: false)
                     WallpaperSnapshotInvalidator.shared.invalidateSnapshots()
-                    reply.finish()
+                    self.settingsRefresh.complete(generation: generation)
                 }
             }
         }

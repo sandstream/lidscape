@@ -113,6 +113,24 @@ struct ProbeBootstrapCheck {
         precondition(replies.wait(timeout: .now()) == .success, "A Settings reply is required")
         precondition(replies.wait(timeout: .now()) == .timedOut, "Settings must not receive duplicate replies")
 
+        // Multiple Settings requests share one refresh, including after reply timeouts.
+        let coordinator = SettingsRefreshCoordinator()
+        var joins: [(generation: UUID, token: UUID, start: Bool)] = []
+        for _ in 0..<24 { joins.append(coordinator.join(SettingsRefreshReply {})) }
+        precondition(joins.filter(\.start).count == 1, "Concurrent requests must share a refresh")
+        let firstGeneration = joins[0].generation
+        precondition(joins.allSatisfy { $0.generation == firstGeneration }, "Requests must share the same generation")
+        for join in joins { coordinator.timeout(generation: join.generation, token: join.token) }
+        let later = coordinator.join(SettingsRefreshReply {})
+        precondition(!later.start && later.generation == firstGeneration,
+                     "Timeouts must not queue another refresh while work is still active")
+        coordinator.complete(generation: firstGeneration)
+        let next = coordinator.join(SettingsRefreshReply {})
+        precondition(next.start && next.generation != firstGeneration, "Completed work must permit a new refresh")
+        coordinator.complete(generation: firstGeneration)
+        precondition(coordinator.isCurrent(next.generation), "A late old completion must not clear the new refresh")
+        coordinator.complete(generation: next.generation)
+
         // A Settings refresh must not wait for another bootstrap writer.
         let lockPath = docs.appendingPathComponent(".lidscape-bootstrap.lock").path
         let heldFD = open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
