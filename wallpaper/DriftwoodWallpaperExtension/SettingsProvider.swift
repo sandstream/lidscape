@@ -9,11 +9,10 @@ func buildSettingsViewModelsXPC() async -> AnyObject? {
     let groupID = GroupID(id: "se.sandstream.lidscape.wallpaper.display-wallpapers")
     // With native wallpaper turned off in Driftwood, offering these choices in Wallpaper
     // Settings would invite the user to select a provider the app has stopped driving.
-    let enabled = WallpaperPrefs.shared.nativeWallpaperEnabled
-    if enabled {
+    if WallpaperPrefs.shared.nativeWallpaperEnabled {
         await WallpaperAssignmentStore.shared.refreshConnectedDisplayChoices()
     }
-    let slots = enabled
+    let slots = WallpaperPrefs.shared.nativeWallpaperEnabled
         ? WallpaperAssignmentStore.shared.visibleSettingsSlots()
         : []
 
