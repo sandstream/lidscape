@@ -269,6 +269,38 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
         }
     }
 
+    /// Add slots for newly connected displays before building the Settings list.
+    /// Serialize manifest reload with wallpaper lifecycle operations.
+    func refreshConnectedDisplayChoices() async {
+        await withCheckedContinuation { continuation in
+            Lifecycle.queue.async {
+                ProbeBootstrap.prepare()
+                self.reload(applyToHostedSurfaces: false)
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Limit the Settings list to connected displays without deleting saved choices.
+    func visibleSettingsSlots() -> [DisplayWallpaperSlot] {
+        let slots = settingsSlots()
+        let visible = Set(ProbeChoiceMapping.visibleDisplays(
+            slots.map(\.displayUUID), active: activeDisplayUUIDs()
+        ))
+        return slots.filter { visible.contains($0.displayUUID) }
+    }
+
+    /// A failed query leaves the existing list available instead of losing choices.
+    private func activeDisplayUUIDs() -> Set<String>? {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return nil }
+        let active = displays.prefix(Int(count)).compactMap(canonicalDisplayUUID)
+        guard active.count == Int(count), !active.isEmpty else { return nil }
+        return Set(active)
+    }
+
     func isCurrent(_ assignment: DisplayWallpaperAssignment) -> Bool {
         lock.withLock {
             $0.manifest?.assignments[assignment.displayUUID] == assignment

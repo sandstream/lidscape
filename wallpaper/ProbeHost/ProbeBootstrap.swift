@@ -42,20 +42,39 @@ enum ProbeBootstrap {
         guard CGGetActiveDisplayList(count, &displays, &count) == .success else {
             throw NSError(domain: "LidscapeWallpaperProbe", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot list displays."])
         }
-        let slots = docs.appendingPathComponent("display-slots", isDirectory: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var assignments: [String: DisplayWallpaperAssignment] = [:]
-        for (index, display) in displays.prefix(Int(count)).enumerated() {
+        let screens: [(displayUUID: String, displayName: String)] = displays.prefix(Int(count)).enumerated().compactMap { index, display in
             guard let uuid = CGDisplayCreateUUIDFromDisplayID(display)?.takeRetainedValue(),
                   let raw = CFUUIDCreateString(nil, uuid),
-                  let displayUUID = WallpaperDisplayUUID.normalized(raw as String) else { continue }
+                  let displayUUID = WallpaperDisplayUUID.normalized(raw as String) else { return nil }
+            return (displayUUID, "Lidscape (Display \(index + 1))")
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let assignments = try ensureDisplaySlots(docs: docs, scene: scene, displays: screens)
+        guard !assignments.isEmpty else { throw NSError(domain: "LidscapeWallpaperProbe", code: 4) }
+        let prefs: [String: Any] = ["userPaused": false, "alwaysPauseDesktop": false, "pauseWhenOccluded": false,
+            "desktopOccluded": false, "pauseOnBattery": false, "playbackRate": 1.0, "quality": "auto", "nativeWallpaper": true]
+        let prefsData = try JSONSerialization.data(withJSONObject: prefs, options: [.sortedKeys])
+        try writeStateLocked(docs: docs, defaults: assignments, prefsData: prefsData, encoder: encoder)
+        extensionLog("Lidscape test: prepared \(assignments.count) display choices")
+    }
+
+    /// Create missing screen choices while preserving every existing choice.
+    static func ensureDisplaySlots(
+        docs: URL, scene: URL, displays: [(displayUUID: String, displayName: String)]
+    ) throws -> [String: DisplayWallpaperAssignment] {
+        let files = FileManager.default
+        let slots = docs.appendingPathComponent("display-slots", isDirectory: true)
+        var assignments: [String: DisplayWallpaperAssignment] = [:]
+        for display in displays {
+            let displayUUID = display.displayUUID
+            guard WallpaperDisplayUUID.normalized(displayUUID) == displayUUID else { continue }
             let directory = slots.appendingPathComponent(displayUUID, isDirectory: true)
             try files.createDirectory(at: directory, withIntermediateDirectories: true)
             let anchor = directory.appendingPathComponent("anchor.driftwoodscene", isDirectory: true)
             if !files.fileExists(atPath: anchor.path) { try files.copyItem(at: scene, to: anchor) }
             let slot: [String: String] = ["displayUUID": displayUUID, "choiceID": ProbeChoiceMapping.choiceID(forDisplay: displayUUID),
-                "displayName": "Lidscape (Display \(index + 1))", "anchorPath": "anchor.driftwoodscene/scene.json"]
+                "displayName": display.displayName, "anchorPath": "anchor.driftwoodscene/scene.json"]
             let slotData = try JSONSerialization.data(withJSONObject: slot, options: [.sortedKeys])
             try createIfMissing(slotData, at: directory.appendingPathComponent("slot.json"))
             let entry = DisplayPlaylistEntry(contentUUID: "A2643CE4-826D-44D6-9B9F-D87CC004A16D", kind: .metalScene,
@@ -63,12 +82,7 @@ enum ProbeBootstrap {
                 title: "Lidscape", durationSeconds: 0)
             assignments[displayUUID] = try DisplayWallpaperAssignment(displayUUID: displayUUID, entries: [entry], assignmentRevision: 1)
         }
-        guard !assignments.isEmpty else { throw NSError(domain: "LidscapeWallpaperProbe", code: 4) }
-        let prefs: [String: Any] = ["userPaused": false, "alwaysPauseDesktop": false, "pauseWhenOccluded": false,
-            "desktopOccluded": false, "pauseOnBattery": false, "playbackRate": 1.0, "quality": "auto", "nativeWallpaper": true]
-        let prefsData = try JSONSerialization.data(withJSONObject: prefs, options: [.sortedKeys])
-        try writeStateLocked(docs: docs, defaults: assignments, prefsData: prefsData, encoder: encoder)
-        extensionLog("Lidscape test: prepared \(assignments.count) display choices")
+        return assignments
     }
 
     // All writers that add assignments must hold this lock for the read and write.

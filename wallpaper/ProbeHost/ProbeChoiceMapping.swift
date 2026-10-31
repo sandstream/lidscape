@@ -11,6 +11,12 @@ enum ProbeChoiceMapping {
                            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15])).uuidString
     }
 
+    /// Filter only the Settings list. Stored choices and assignments remain untouched.
+    static func visibleDisplays(_ displayUUIDs: [String], active: Set<String>?) -> [String] {
+        guard let active else { return displayUUIDs }
+        return displayUUIDs.filter { active.contains($0) }
+    }
+
     static func displayUUID(forChoice choiceID: String, slots: [(choiceID: String, displayUUID: String)]) -> String? {
         guard let canonicalChoiceID = UUID(uuidString: choiceID)?.uuidString else { return nil }
         let matches = slots.filter { $0.choiceID == canonicalChoiceID }

@@ -84,10 +84,51 @@ struct ProbeBootstrapCheck {
             child.waitUntilExit()
             precondition(child.terminationStatus == 0, "A concurrent writer failed")
         }
+        // Listing hides disconnected displays without changing their saved assignment.
+        let retained = try manifest(docs)
+        let slots = [first, second, third]
+        let oneVisible = ProbeChoiceMapping.visibleDisplays(slots, active: Set([first]))
+        precondition(oneVisible == [first], "Disconnected displays must not appear in Settings")
+        let reconnected = ProbeChoiceMapping.visibleDisplays(slots, active: Set([first, second]))
+        precondition(reconnected == [first, second], "A reconnected display must appear again")
+        let afterListing = try manifest(docs)
+        precondition(afterListing == retained, "Listing displays must not change saved assignments")
+        precondition(ProbeChoiceMapping.visibleDisplays(slots, active: nil) == slots,
+                     "A display query failure must not discard choices")
+
         let concurrent = try manifest(docs)
         precondition(concurrent.revision == 6 && concurrent.assignments.count == 3, "Concurrent writers lost a display")
         precondition(concurrent.assignments[first] == original.assignments[first], "Concurrent writers changed an existing display")
         try checkFile(prefsURL, equals: customizedPrefs, "Concurrent writers changed preferences")
+
+        // Refreshing for a new screen must retain choices for disconnected screens.
+        let hotplug = docs.appendingPathComponent("hotplug", isDirectory: true)
+        let scene = hotplug.appendingPathComponent("probe-content/Pulse.driftwoodscene", isDirectory: true)
+        try FileManager.default.createDirectory(at: scene, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: scene.appendingPathComponent("scene.json"))
+        func refresh(_ screens: [(displayUUID: String, displayName: String)]) throws {
+            try ProbeBootstrap.withStateLock(docs: hotplug) {
+                let defaults = try ProbeBootstrap.ensureDisplaySlots(docs: hotplug, scene: scene, displays: screens)
+                try ProbeBootstrap.writeStateLocked(docs: hotplug, defaults: defaults, prefsData: customizedPrefs)
+            }
+        }
+        try refresh([(first, "First")])
+        let firstSlot = hotplug.appendingPathComponent("display-slots/\(first)/slot.json")
+        let firstSlotData = try Data(contentsOf: firstSlot)
+        let customized = try WallpaperAssignmentManifest(revision: 2,
+            assignments: [first: assignment(first, title: "Saved", revision: 2)])
+        try JSONEncoder().encode(customized).write(to: hotplug.appendingPathComponent("driftwood-assignments.json"), options: .atomic)
+        try refresh([(second, "Second")])
+        let afterConnect = try manifest(hotplug)
+        precondition(afterConnect.assignments[first] == customized.assignments[first], "Disconnected screen lost its saved assignment")
+        precondition(afterConnect.assignments[second] != nil, "A new screen was not added")
+        try checkFile(firstSlot, equals: firstSlotData, "Disconnected screen lost its choice")
+        try refresh([(first, "First"), (second, "Second")])
+        let afterReconnect = try manifest(hotplug)
+        precondition(afterReconnect == afterConnect, "Reconnecting changed saved assignments")
+        try checkFile(firstSlot, equals: firstSlotData, "Reconnecting changed the stable choice")
+        try checkFile(hotplug.appendingPathComponent("driftwood-prefs.json"), equals: customizedPrefs,
+                      "Display changes altered preferences")
 
         let existing = docs.appendingPathComponent("existing")
         try Data("original".utf8).write(to: existing)
