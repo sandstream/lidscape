@@ -27,6 +27,7 @@ jobs:
           sh wallpaper/tests/check-wallpaper-acquire-cancellation.sh
           sh wallpaper/tests/check-display-names.sh
           sh wallpaper/tests/check-display-refresh.sh
+          sh wallpaper/tests/check-bootstrap.sh
       - run: node tools/check-cities.mjs
       - run: node tools/check-camera.mjs
       - run: node tools/check-lid.mjs
