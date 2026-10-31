@@ -3,10 +3,33 @@ import ColorSync
 import Darwin
 import Foundation
 
+enum SettingsDisplayPreparation {
+    case ready(Data)
+    case busy
+    case failed
+}
+
 enum ProbeBootstrap {
     static func prepare() {
         do { try writeProbe(docs: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true), bundle: .main) }
         catch { extensionLog("Probe setup failed: \(error.localizedDescription)") }
+    }
+
+    /// Refresh a Settings list without waiting for another bootstrap writer.
+    /// Report a busy writer so the Settings refresh can retry without blocking.
+    static func prepareForSettings() -> SettingsDisplayPreparation {
+        let docs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+            return try withStateLockIfAvailable(docs: docs) {
+                let manifest = docs.appendingPathComponent("driftwood-assignments.json")
+                try writeProbeLocked(docs: docs, bundle: .main)
+                return .ready(try Data(contentsOf: manifest))
+            } ?? .busy
+        } catch {
+            extensionLog("Settings display refresh failed: \(error.localizedDescription)")
+            return .failed
+        }
     }
 
     static func writeProbe(docs: URL, bundle: Bundle) throws {
@@ -92,6 +115,20 @@ enum ProbeBootstrap {
         guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
         defer { close(fd) }
         guard flock(fd, LOCK_EX) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { flock(fd, LOCK_UN) }
+        return try body()
+    }
+
+    /// Skip the refresh when another process is already writing.
+    static func withStateLockIfAvailable<T>(docs: URL, _ body: () throws -> T) throws -> T? {
+        let path = docs.appendingPathComponent(".lidscape-bootstrap.lock").path
+        let fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            if errno == EWOULDBLOCK || errno == EAGAIN { return nil }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
         defer { flock(fd, LOCK_UN) }
         return try body()
     }

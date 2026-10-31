@@ -110,6 +110,7 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
         var snapshotKeys: [String: String] = [:]
         var batches: [String: Batch] = [:]
         var observing = false
+        var lastActiveDisplayUUIDs: Set<String>?
     }
 
     private let lock = OSAllocatedUnfairLock(initialState: State())
@@ -269,14 +270,35 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
         }
     }
 
-    /// Add slots for newly connected displays before building the Settings list.
-    /// Serialize manifest reload with wallpaper lifecycle operations.
+    /// Keep Settings responsive even when another writer or Lifecycle is busy.
     func refreshConnectedDisplayChoices() async {
         await withCheckedContinuation { continuation in
-            Lifecycle.queue.async {
-                ProbeBootstrap.prepare()
-                self.reload(applyToHostedSurfaces: false)
-                continuation.resume()
+            let reply = SettingsRefreshReply { continuation.resume() }
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1) { reply.finish() }
+            refreshConnectedDisplayChoices(attempt: 0, reply: reply)
+        }
+    }
+
+    private func refreshConnectedDisplayChoices(attempt: Int, reply: SettingsRefreshReply) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            switch ProbeBootstrap.prepareForSettings() {
+            case .busy where attempt < 4:
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) {
+                    self.refreshConnectedDisplayChoices(attempt: attempt + 1, reply: reply)
+                }
+            case .busy, .failed:
+                reply.finish()
+            case .ready(let data):
+                guard let prepared = try? JSONDecoder().decode(WallpaperAssignmentManifest.self, from: data),
+                      self.lock.withLock({ $0.manifest != prepared }) else {
+                    reply.finish()
+                    return
+                }
+                Lifecycle.queue.async {
+                    self.reload(applyToHostedSurfaces: false)
+                    WallpaperSnapshotInvalidator.shared.invalidateSnapshots()
+                    reply.finish()
+                }
             }
         }
     }
@@ -284,10 +306,15 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
     /// Limit the Settings list to connected displays without deleting saved choices.
     func visibleSettingsSlots() -> [DisplayWallpaperSlot] {
         let slots = settingsSlots()
-        let visible = Set(ProbeChoiceMapping.visibleDisplays(
-            slots.map(\.displayUUID), active: activeDisplayUUIDs()
-        ))
-        return slots.filter { visible.contains($0.displayUUID) }
+        let current = activeDisplayUUIDs()
+        let active = lock.withLock { state -> Set<String> in
+            let result = ProbeChoiceMapping.activeDisplays(current: current, previous: state.lastActiveDisplayUUIDs)
+            if let current { state.lastActiveDisplayUUIDs = current }
+            return result
+        }
+        let visible = Set(ProbeChoiceMapping.visibleDisplays(slots.map(\.displayUUID), active: active))
+        // Do not expose a new choice before its assignment is ready for snapshots.
+        return slots.filter { visible.contains($0.displayUUID) && $0.assignment != nil }
     }
 
     /// A failed query leaves the existing list available instead of losing choices.

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 func extensionLog(_ message: String) {}
 
@@ -93,13 +94,35 @@ struct ProbeBootstrapCheck {
         precondition(reconnected == [first, second], "A reconnected display must appear again")
         let afterListing = try manifest(docs)
         precondition(afterListing == retained, "Listing displays must not change saved assignments")
-        precondition(ProbeChoiceMapping.visibleDisplays(slots, active: nil) == slots,
-                     "A display query failure must not discard choices")
+        precondition(ProbeChoiceMapping.activeDisplays(current: nil, previous: nil).isEmpty,
+                     "An unknown display list must not expose stale choices")
+        precondition(ProbeChoiceMapping.activeDisplays(current: nil, previous: Set([first])) == Set([first]),
+                     "A failed query must retain the last verified display list")
+        precondition(ProbeChoiceMapping.activeDisplays(current: Set([second]), previous: Set([first])) == Set([second]),
+                     "A successful query must replace the previous display list")
 
         let concurrent = try manifest(docs)
         precondition(concurrent.revision == 6 && concurrent.assignments.count == 3, "Concurrent writers lost a display")
         precondition(concurrent.assignments[first] == original.assignments[first], "Concurrent writers changed an existing display")
         try checkFile(prefsURL, equals: customizedPrefs, "Concurrent writers changed preferences")
+
+        // Timeout and completion may race, but Settings must receive one reply.
+        let replies = DispatchSemaphore(value: 0)
+        let reply = SettingsRefreshReply { replies.signal() }
+        DispatchQueue.concurrentPerform(iterations: 20) { _ in reply.finish() }
+        precondition(replies.wait(timeout: .now()) == .success, "A Settings reply is required")
+        precondition(replies.wait(timeout: .now()) == .timedOut, "Settings must not receive duplicate replies")
+
+        // A Settings refresh must not wait for another bootstrap writer.
+        let lockPath = docs.appendingPathComponent(".lidscape-bootstrap.lock").path
+        let heldFD = open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        precondition(heldFD >= 0 && flock(heldFD, LOCK_EX) == 0, "Could not hold the test lock")
+        let unavailable: Bool? = try ProbeBootstrap.withStateLockIfAvailable(docs: docs) { true }
+        precondition(unavailable == nil, "A busy bootstrap lock must be skipped")
+        flock(heldFD, LOCK_UN)
+        close(heldFD)
+        let available: Bool? = try ProbeBootstrap.withStateLockIfAvailable(docs: docs) { true }
+        precondition(available == true, "An available bootstrap lock must run the refresh")
 
         // Refreshing for a new screen must retain choices for disconnected screens.
         let hotplug = docs.appendingPathComponent("hotplug", isDirectory: true)
