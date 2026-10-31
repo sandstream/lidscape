@@ -90,12 +90,30 @@ private final class SensorPing: @unchecked Sendable {
     }
 }
 
+/// The live scene keeps its height and shows more or less at the sides, so the
+/// poster fills the height and crops the sides instead of stretching.
+func posterRect(_ image: NSSize, in bounds: NSRect) -> NSRect {
+    guard image.width > 0, image.height > 0 else { return bounds }
+    let height = bounds.height
+    let width = height * image.width / image.height
+    return NSRect(x: bounds.midX - width / 2, y: bounds.minY, width: width, height: height)
+}
+
+private final class PosterView: NSView {
+    var image: NSImage? { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let image else { return }
+        image.draw(in: posterRect(image.size, in: bounds), from: .zero, operation: .sourceOver, fraction: 1)
+    }
+}
+
 @objc(LidscapeSaverView)
 final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMessageHandler {
     private lazy var saverDefaults = ScreenSaverDefaults(forModuleWithName: saverBundleID)
     private var poster: NSImage?
     private var webView: WKWebView?
-    private var fallbackView: NSImageView?
+    private var fallbackView: PosterView?
     private var fallbackTimer: Timer?
     private var animationActive = false
     private var lastRenderSeen: Date?
@@ -194,7 +212,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         super.init(frame: frame, isPreview: isPreview)
         wantsLayer = true
         layer?.backgroundColor = NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).cgColor
-        layer?.contentsGravity = .resize
         refreshPoster()
     }
 
@@ -207,7 +224,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     override func draw(_ dirtyRect: NSRect) {
         NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1).setFill()
         dirtyRect.fill()
-        poster?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+        if let poster { poster.draw(in: posterRect(poster.size, in: bounds), from: .zero, operation: .sourceOver, fraction: 1) }
     }
 
     override func startAnimation() {
@@ -226,9 +243,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             addSubview(fallbackView, positioned: .above, relativeTo: webView)
             fallbackView.needsDisplay = true
         } else {
-            let fallback = NSImageView(frame: bounds)
+            let fallback = PosterView(frame: bounds)
             fallback.image = poster
-            fallback.imageScaling = .scaleAxesIndependently
             fallback.autoresizingMask = [.width, .height]
             addSubview(fallback)
             fallbackView = fallback
@@ -445,7 +461,6 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let url = bundle.url(forResource: name, withExtension: "png")
             ?? bundle.url(forResource: "poster", withExtension: "png")
         poster = url.flatMap { NSImage(contentsOf: $0) }
-        layer?.contents = poster?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         fallbackView?.image = poster
         needsDisplay = true
     }

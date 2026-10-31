@@ -23,7 +23,8 @@ try {
     ...CITIES.flatMap(({ id: city }) => THEMES.flatMap(({ id: theme }) =>
       ['', ...VARIANTS.map(({ id }) => id)].map((variant) => ({
         name: `poster-city-${city}-${theme}-${variant || 'none'}.png`,
-        width: 2560, height: 1440, scale: 1,
+        // 21:9 covers ultrawide screens; the saver crops the sides on narrower ones.
+        width: 3440, height: 1440, scale: 1,
         params: { city, theme, variant },
       })))),
   ]

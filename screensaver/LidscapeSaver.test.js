@@ -38,6 +38,44 @@ precondition(fields["variant"] as? String == "christmas")
   }
 })
 
+test('the poster keeps the live scene framing on any screen shape', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-poster-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    // The live scene keeps its height and shows more or less at the sides.
+    // The poster must fill the height and crop the sides, never stretch.
+    const testSource = `${source}
+private let poster = NSSize(width: 3440, height: 1440)
+for screen in [NSSize(width: 1512, height: 982), NSSize(width: 1920, height: 1080),
+               NSSize(width: 3440, height: 1440), NSSize(width: 1024, height: 768)] {
+    let rect = posterRect(poster, in: NSRect(origin: .zero, size: screen))
+    precondition(abs(rect.height - screen.height) < 0.001, "The poster must fill the screen height")
+    precondition(abs(rect.width / rect.height - poster.width / poster.height) < 0.001, "The poster must keep its shape")
+    precondition(abs(rect.midX - screen.width / 2) < 0.001, "The poster must be centred")
+    precondition(rect.width >= screen.width - 0.001, "The poster must cover the screen width")
+}
+`
+    const file = join(dir, 'poster.swift')
+    const executable = join(dir, 'poster')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('posters are wide enough to cover ultrawide screens', async () => {
+  const source = await readFile(fileURLToPath(new URL('./generate-thumbnail.mjs', import.meta.url)), 'utf8')
+  const poster = source.match(/name: `poster-city-[\s\S]*?width: (\d+), height: (\d+)/)
+  if (!poster) throw new Error('The poster size was not found')
+  if (Number(poster[1]) / Number(poster[2]) < 21 / 9) throw new Error('Posters must be at least 21:9')
+})
+
 test('the sensor helper can be launched again after a failed startup', {
   skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
   timeout: 60000,
@@ -154,7 +192,7 @@ extension LidscapeSaverView {
     func exercisePageFailure() {
         let content = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
         webView = content
-        fallbackView = NSImageView()
+        fallbackView = PosterView()
         fallbackView?.isHidden = true
         pageURL = URL(fileURLWithPath: "/tmp/page.html")
         resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
@@ -286,7 +324,7 @@ extension LidscapeSaverView {
     func exerciseStalledFrames() {
         let content = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
         webView = content
-        fallbackView = NSImageView()
+        fallbackView = PosterView()
         fallbackView?.isHidden = true
         pageURL = URL(fileURLWithPath: "/tmp/page.html")
         resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
@@ -319,7 +357,7 @@ extension LidscapeSaverView {
     }
     func exerciseStalledPreview() {
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
-        fallbackView = NSImageView()
+        fallbackView = PosterView()
         pageURL = URL(fileURLWithPath: "/tmp/page.html")
         resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
         animationActive = true
