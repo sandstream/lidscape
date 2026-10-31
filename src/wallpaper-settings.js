@@ -33,7 +33,6 @@ export function setupWallpaperSettings({ t, lang }) {
   let current = null
   let busy = false
   let confirmationAction = null
-  let systemOpened = false
   let choicesInitialized = false
 
   button.textContent = t.wallpaper
@@ -84,7 +83,7 @@ export function setupWallpaperSettings({ t, lang }) {
     close.disabled = busy
     city.disabled = theme.disabled = variant.disabled = save.disabled = busy || !installed
     confirmSystem.disabled = busy
-    confirmAction.disabled = busy || !systemOpened
+    confirmAction.disabled = busy
     confirmCancel.disabled = busy
   }
   function setCurrent(next) {
@@ -129,7 +128,6 @@ export function setupWallpaperSettings({ t, lang }) {
     current = null
     choicesInitialized = false
     confirmationAction = null
-    systemOpened = false
     message(t.wallpaperLoading)
     refresh()
     dialog.showModal()
@@ -138,7 +136,6 @@ export function setupWallpaperSettings({ t, lang }) {
   install.addEventListener('click', () => {
     if (current?.installed) {
       confirmationAction = 'remove'
-      systemOpened = false
       refresh()
       return
     }
@@ -149,7 +146,6 @@ export function setupWallpaperSettings({ t, lang }) {
   })
   update.addEventListener('click', () => {
     confirmationAction = 'update'
-    systemOpened = false
     refresh()
   })
   register.addEventListener('click', () => run(async () => {
@@ -169,20 +165,15 @@ export function setupWallpaperSettings({ t, lang }) {
     message(t.wallpaperRestoreHelp)
   }))
   retry.addEventListener('click', () => run(reload))
-  confirmSystem.addEventListener('click', () => run(async () => {
-    await invoke('open_wallpaper_settings')
-    systemOpened = true
-  }))
+  confirmSystem.addEventListener('click', () => run(async () => { await invoke('open_wallpaper_settings') }))
   confirmAction.addEventListener('click', () => run(async () => {
     const updating = confirmationAction === 'update'
     setCurrent(await invoke(updating ? 'update_wallpaper' : 'uninstall_wallpaper', { confirmedUnused: true }))
     confirmationAction = null
-    systemOpened = false
     message(updating ? `${t.wallpaperUpdated} ${statusMessage()}` : t.wallpaperRemoved)
   }))
   confirmCancel.addEventListener('click', () => {
     confirmationAction = null
-    systemOpened = false
     message(statusMessage())
     refresh()
   })
