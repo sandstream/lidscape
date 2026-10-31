@@ -13,9 +13,16 @@ func buildSettingsViewModelsXPC() async -> AnyObject? {
         ? WallpaperAssignmentStore.shared.settingsSlots()
         : []
 
+    let screenNames = await MainActor.run { currentWallpaperDisplayNames() }
+    let labels = wallpaperDisplayLabels(
+        slots.map { WallpaperDisplayLabelInput(displayUUID: $0.displayUUID, fallback: $0.displayName) },
+        screenNames: screenNames
+    )
+
     var items = [SettingsItem]()
 
     for (index, slot) in slots.enumerated() {
+        let displayName = labels[slot.displayUUID] ?? slot.displayName
         let choiceID = ChoiceID(
             id: slot.choiceID,
             descriptor: ChoiceIDDescriptor(
@@ -36,7 +43,7 @@ func buildSettingsViewModelsXPC() async -> AnyObject? {
             id: choiceID,
             provider: ChoiceProviderID(rawValue: bundleID),
             identifier: slot.choiceID,
-            name: slot.displayName,
+            name: displayName,
             localizedDescription: assignment?.isPlaylist == true
                 ? "Playlist \u{2014} now playing \(title)"
                 : "Currently playing \(title)",
@@ -47,7 +54,7 @@ func buildSettingsViewModelsXPC() async -> AnyObject? {
 
         let item = SettingsItem(
             id: choiceID,
-            localizedName: slot.displayName,
+            localizedName: displayName,
             thumbnail: thumbnail,
             choice: choiceDescriptor,
             contentBadge: kind == .metalScene ? .dynamic : .video,
