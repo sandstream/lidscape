@@ -22,36 +22,39 @@ func currentWallpaperDisplayNames() -> [String: String] {
     return names
 }
 
-/// Keep the permanent choice IDs separate from their current visible labels.
-/// Distinguish identical model names using a stable order of display UUIDs.
+/// Keep permanent choice IDs separate from their current visible labels.
+/// Distinguish colliding labels using a stable order of display UUIDs.
 func wallpaperDisplayLabels(
     _ slots: [WallpaperDisplayLabelInput],
     screenNames: [String: String]
 ) -> [String: String] {
+    func key(_ label: String) -> String {
+        label.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+
     var groups: [String: [String]] = [:]
-    var usableNames: [String: String] = [:]
+    var bases: [String: String] = [:]
     for slot in slots {
-        guard let raw = screenNames[slot.displayUUID] else { continue }
-        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { continue }
-        usableNames[slot.displayUUID] = name
-        let key = name.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        groups[key, default: []].append(slot.displayUUID)
+        let name = screenNames[slot.displayUUID]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fallback = slot.fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = name.isEmpty ? (fallback.isEmpty ? "Lidscape (Display)" : fallback) : "Lidscape (\(name))"
+        bases[slot.displayUUID] = base
+        groups[key(base), default: []].append(slot.displayUUID)
     }
 
     var result: [String: String] = [:]
-    for slot in slots {
-        guard let name = usableNames[slot.displayUUID] else {
-            result[slot.displayUUID] = slot.fallback
-            continue
+    var used = Set<String>()
+    for slot in slots.sorted(by: { $0.displayUUID < $1.displayUUID }) {
+        guard let base = bases[slot.displayUUID] else { continue }
+        let peers = (groups[key(base)] ?? []).sorted()
+        var suffix = peers.count > 1 ? (peers.firstIndex(of: slot.displayUUID) ?? 0) + 1 : 0
+        var label = suffix == 0 ? base : "\(base) [\(suffix)]"
+        while used.contains(key(label)) {
+            suffix = max(suffix + 1, 2)
+            label = "\(base) [\(suffix)]"
         }
-        let key = name.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        let peers = (groups[key] ?? []).sorted()
-        if peers.count > 1, let position = peers.firstIndex(of: slot.displayUUID) {
-            result[slot.displayUUID] = "Lidscape (\(name), \(position + 1))"
-        } else {
-            result[slot.displayUUID] = "Lidscape (\(name))"
-        }
+        result[slot.displayUUID] = label
+        used.insert(key(label))
     }
     return result
 }

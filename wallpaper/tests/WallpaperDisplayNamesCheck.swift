@@ -26,13 +26,33 @@ struct WallpaperDisplayNamesCheck {
         let duplicates = wallpaperDisplayLabels(slots, screenNames: [
             a: "Dell U2723", b: "Dell U2723",
         ])
-        precondition(duplicates[a] == "Lidscape (Dell U2723, 1)")
-        precondition(duplicates[b] == "Lidscape (Dell U2723, 2)")
+        precondition(duplicates[a] == "Lidscape (Dell U2723) [1]")
+        precondition(duplicates[b] == "Lidscape (Dell U2723) [2]")
         precondition(duplicates[c] == "Lidscape (Display 3)")
         let reverse = wallpaperDisplayLabels(Array(slots.reversed()), screenNames: [
             a: "Dell U2723", b: "Dell U2723",
         ])
         precondition(reverse == duplicates, "Labels changed when enumeration order changed")
+
+        let collisions = wallpaperDisplayLabels(slots, screenNames: [
+            a: "Display 3", b: "Display 3",
+        ])
+        precondition(Set(collisions.values.map { $0.lowercased() }).count == 3,
+            "A fallback label collided with a real screen name")
+        let collidingFallback = [
+            WallpaperDisplayLabelInput(displayUUID: a, fallback: "Lidscape (Display 3) [1]"),
+            WallpaperDisplayLabelInput(displayUUID: b, fallback: "unused"),
+            WallpaperDisplayLabelInput(displayUUID: c, fallback: "unused"),
+        ]
+        let numberedCollision = wallpaperDisplayLabels(collidingFallback, screenNames: [
+            b: "Display 3", c: "Display 3",
+        ])
+        precondition(Set(numberedCollision.values.map { $0.lowercased() }).count == 3,
+            "A numbered label collided with an existing fallback")
+        let missingFallback = wallpaperDisplayLabels(
+            [WallpaperDisplayLabelInput(displayUUID: a, fallback: "  ")], screenNames: [:]
+        )
+        precondition(missingFallback[a] == "Lidscape (Display)")
 
         // On a machine with a screen, exercise the real AppKit to CoreGraphics mapping.
         let names = currentWallpaperDisplayNames()
