@@ -11,6 +11,7 @@ import { findVariant } from './variants/index.js'
 import { buildPost } from './post.js'
 import { setOffAxis } from './offaxis.js'
 import { lidProgressForAngle } from './lid.js'
+import { local, pickLang } from './lang/index.js'
 
 const SCREEN_H = 19.5
 const EYE = { x: 0, y: 1.5, z: 55 }
@@ -18,6 +19,8 @@ const params = new URLSearchParams({
   ...(window.lidscapeSaverOptions ?? {}),
   ...Object.fromEntries(new URLSearchParams(location.search)),
 })
+const lang = pickLang(params.get('lang'), window.lidscapeMacLanguage, ...(navigator.languages ?? [navigator.language]))
+document.documentElement.lang = lang
 const lowQuality = params.get('quality') === 'low'
 const cityDef = findCity(params.get('city'))
 const theme = findTheme(params.get('theme'))
@@ -86,6 +89,7 @@ window.lidscapeSaverSetLidAngle = (angle) => {
   lid.connected = true
   lid.progress = next
 }
+// A wallpaper host can clear a stale angle when its sensor connection fails.
 window.lidscapeSaverClearLidAngle = () => {
   lid.connected = false
   lid.progress = null
@@ -93,12 +97,40 @@ window.lidscapeSaverClearLidAngle = () => {
 const clock = new THREE.Clock()
 let progress = 1
 let running = true
+let paused = false
+let frameRequest = null
 let previousFrame = 0
 let previousFrameSignal = -Infinity
+const label = document.getElementById('label')
+const labelRay = new THREE.Raycaster()
+const pointerNdc = new THREE.Vector2()
+let pointer = null
+
+function updateLabel() {
+  let found = null
+  if (pointer && progress > 0.85) {
+    pointerNdc.set(pointer.x * 2 - 1, 1 - pointer.y * 2)
+    labelRay.setFromCamera(pointerNdc, camera)
+    found = city.pick(labelRay.ray)
+  }
+  label.hidden = !found
+  if (!found) return
+  label.querySelector('strong').textContent = local(found.name, lang)
+  label.querySelector('span').textContent = local(found.note, lang)
+  const x = Math.max(0, Math.min(pointer.x * innerWidth + 14, innerWidth - label.offsetWidth - 8))
+  const y = Math.max(0, Math.min(pointer.y * innerHeight + 16, innerHeight - label.offsetHeight - 8))
+  label.style.transform = `translate(${x}px, ${y}px)`
+}
+
+// The wallpaper host sends normalized coordinates. No input leaves the label hidden.
+window.lidscapeSaverSetPointer = (x, y) => {
+  pointer = Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null
+  updateLabel()
+}
 
 function frame(now) {
-  if (!running) return
-  requestAnimationFrame(frame)
+  if (!running || paused) return
+  frameRequest = requestAnimationFrame(frame)
   if (now - previousFrame < 1000 / 30) return
   previousFrame = now
   const dt = Math.min(clock.getDelta(), 0.1)
@@ -108,10 +140,27 @@ function frame(now) {
   city.update(progress, 1, clock.elapsedTime)
   if (!lowQuality) city.renderReflection(renderer, camera)
   composer.render()
+  updateLabel()
   window.lidscapeSaverLastRender = Date.now()
   if (now - previousFrameSignal >= 250) {
     previousFrameSignal = now
     window.webkit?.messageHandlers?.lidscapeFrame?.postMessage(1)
+  }
+}
+
+// The wallpaper host pauses the scene when the system cannot display it.
+window.lidscapeSaverSetPaused = (value) => {
+  if (!running || typeof value !== 'boolean' || paused === value) return
+  paused = value
+  if (paused) {
+    cancelAnimationFrame(frameRequest)
+    frameRequest = null
+  } else {
+    const elapsed = clock.elapsedTime
+    clock.getDelta()
+    clock.elapsedTime = elapsed
+    previousFrame = 0
+    frameRequest = requestAnimationFrame(frame)
   }
 }
 
@@ -124,8 +173,9 @@ window.lidscapeSaver = {
   lid,
   stop() {
     running = false
+    cancelAnimationFrame(frameRequest)
     lid.disconnect()
     renderer.dispose()
   },
 }
-requestAnimationFrame(frame)
+frameRequest = requestAnimationFrame(frame)

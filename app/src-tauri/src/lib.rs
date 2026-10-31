@@ -1,5 +1,6 @@
 mod update;
 mod screensaver;
+mod wallpaper;
 
 
 use std::path::PathBuf;
@@ -79,6 +80,12 @@ pub fn run() {
             screensaver::install_screensaver,
             screensaver::uninstall_screensaver,
             screensaver::open_screensaver_settings,
+            wallpaper::wallpaper_status,
+            wallpaper::install_wallpaper,
+            wallpaper::update_wallpaper,
+            wallpaper::uninstall_wallpaper,
+            wallpaper::save_wallpaper_settings,
+            wallpaper::open_wallpaper_settings,
         ])
         .setup(|app| {
             let child = match Command::new(bridge_path()).spawn() {

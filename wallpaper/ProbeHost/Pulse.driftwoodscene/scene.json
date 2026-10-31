@@ -1,0 +1,1 @@
+{"schemaVersion":1,"name":"Lidscape Wallpaper Probe","author":"Sandstream","renderer":{"type":"metalFragment","abiVersion":1,"source":"main.metal"},"resolution":{"width":640,"height":360},"preview":{"time":0,"width":640,"height":360},"preferredFPS":30}

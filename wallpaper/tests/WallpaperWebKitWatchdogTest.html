@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>html, body { margin: 0; width: 100%; height: 100%; background: black } canvas { width: 100%; height: 100% }</style>
+<canvas id="scene" width="1280" height="720"></canvas>
+<script>
+const liveAfterReload = false
+const context = document.getElementById('scene').getContext('2d')
+const stall = window.lidscapeWatchdogTestMode === 'always-stall' || !liveAfterReload
+const started = Date.now()
+let paused = false
+let wasPaused = false
+let resumed = false
+window.lidscapeSaverSetPaused = (value) => {
+  paused = value
+  if (value) wasPaused = true
+  else if (wasPaused) resumed = true
+}
+function frame() {
+  if (!paused && (!stall || Date.now() - started < 250)) {
+    context.fillStyle = resumed ? '#0000ff' : liveAfterReload ? '#00ff00' : '#ff0000'
+    context.fillRect(0, 0, 1280, 720)
+    window.lidscapeSaverLastRender = Date.now()
+  }
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+</script>
