@@ -36,6 +36,7 @@ parts = [
     method(choice, '    static func visibleDisplays('),
     '\n}\nfinal class Store: @unchecked Sendable {\n',
     '''
+    let settingsRefresh = SettingsRefreshCoordinator()
     let documentsURL: URL
     let lock = StateLock()
     var current: Set<String>?
