@@ -72,3 +72,32 @@ test('the browser can switch views, fold the map, zoom, and open the city guide'
     server.kill()
   }
 })
+
+test('changing a setting keeps the book as open as it was', { timeout: 120000 }, async () => {
+  const server = spawn('python3', ['tools/serve.py', '5189'], { cwd: root, stdio: 'ignore' })
+  let browser
+  try {
+    await waitForServer()
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {
+        constructor() { window.__lidSocket = this }
+        sendAngle(angle) { this.onmessage({ data: JSON.stringify({ angle }) }) }
+      }
+    })
+    await useLocalModules(page)
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await page.evaluate(() => { window.__lidSocket.onopen(); window.__lidSocket.sendAngle(105) })
+    await page.waitForFunction(() => window.lidscape.progress() > 0.99)
+    await Promise.all([page.waitForURL(/variant=christmas/), page.locator('#variant').selectOption('christmas')])
+    await page.waitForFunction(() => window.lidscape?.progress)
+    // Before the sensor answers again, the book must not fall back to almost closed.
+    assert.ok(await page.evaluate(() => window.lidscape.progress()) > 0.99)
+  } finally {
+    await browser?.close()
+    server.kill()
+  }
+})

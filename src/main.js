@@ -258,12 +258,19 @@ for (const [code, l] of Object.entries(LANGUAGES)) langPicker.add(new Option(l.n
 const mapLangPicker = document.getElementById('map-lang')
 mapLangPicker.setAttribute('aria-label', t.lang)
 for (const [code, l] of Object.entries(LANGUAGES)) mapLangPicker.add(new Option(l.name, code, false, code === lang))
+// A setting reloads the page. Carry the book's position, so it does not fall back
+// to almost closed and open again before the lid sensor answers.
+function reloadWithSettings() {
+  params.set('progress', progress.toFixed(3))
+  location.search = params.toString()
+}
+
 function changeLanguage(code) {
   try {
     localStorage.setItem(LANG_KEY, code)
   } catch {}
   params.set('lang', code)
-  location.search = params.toString()
+  reloadWithSettings()
 }
 langPicker.addEventListener('change', () => changeLanguage(langPicker.value))
 mapLangPicker.addEventListener('change', () => changeLanguage(mapLangPicker.value))
@@ -275,7 +282,7 @@ for (const c of CITIES) cityPicker.add(new Option(local(c.name, lang), c.id, fal
 cityPicker.hidden = CITIES.length < 2
 cityPicker.addEventListener('change', () => {
   params.set('city', cityPicker.value)
-  location.search = params.toString()
+  reloadWithSettings()
 })
 
 const themePicker = document.getElementById('theme')
@@ -283,7 +290,7 @@ themePicker.setAttribute('aria-label', t.theme)
 for (const th of THEMES) themePicker.add(new Option(local(th.name, lang), th.id, false, th.id === theme.id))
 themePicker.addEventListener('change', () => {
   params.set('theme', themePicker.value)
-  location.search = params.toString()
+  reloadWithSettings()
 })
 
 const variantPicker = document.getElementById('variant')
@@ -293,7 +300,7 @@ for (const v of VARIANTS) variantPicker.add(new Option(local(v.name, lang), v.id
 variantPicker.addEventListener('change', () => {
   if (variantPicker.value) params.set('variant', variantPicker.value)
   else params.delete('variant')
-  location.search = params.toString()
+  reloadWithSettings()
 })
 
 // A setting shows only when the city allows what it controls: no snow slider in Nairobi.
@@ -628,6 +635,7 @@ refreshHud()
 
 const eye = { ...DEFAULT_EYE }
 let progress = input.manual
+window.lidscape.progress = () => progress
 let lights = input.lightsOn ? 1 : 0
 const clock = new THREE.Clock()
 let hudTick = 0
