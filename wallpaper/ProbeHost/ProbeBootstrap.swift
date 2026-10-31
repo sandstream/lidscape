@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import ColorSync
 import Darwin
@@ -9,9 +10,63 @@ enum SettingsDisplayPreparation {
     case failed
 }
 
+/// Serialize name writes outside the render queue. While a write waits for the
+/// file lock, retain only the latest pending names for each documents directory.
+/// Each extension process has its own coordinator, so write order across
+/// processes is not guaranteed. Settings reads current names from AppKit;
+/// stored names are a fallback.
+final class DisplayNameRefreshCoordinator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "se.sandstream.lidscape.display-name-refresh")
+    private let work: @Sendable (URL, [String: String]) -> Void
+    private var pending: [URL: [String: String]] = [:]
+    private var running = false
+
+    init(work: @escaping @Sendable (URL, [String: String]) -> Void) {
+        self.work = work
+    }
+
+    func submit(docs: URL, names: [String: String]) {
+        lock.lock()
+        pending[docs] = names
+        guard !running else { lock.unlock(); return }
+        running = true
+        lock.unlock()
+        queue.async { self.drain() }
+    }
+
+    private func drain() {
+        while true {
+            lock.lock()
+            guard let (docs, names) = pending.first else {
+                running = false
+                lock.unlock()
+                return
+            }
+            pending.removeValue(forKey: docs)
+            lock.unlock()
+            work(docs, names)
+        }
+    }
+}
+
 enum ProbeBootstrap {
+    private static let displayNameRefresh = DisplayNameRefreshCoordinator { docs, names in
+        do {
+            try withStateLock(docs: docs) {
+                try refreshDisplayNames(docs: docs, names: names)
+            }
+        } catch {
+            extensionLog("Display name refresh failed: \(error.localizedDescription)")
+        }
+    }
+
     static func prepare() {
-        do { try writeProbe(docs: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true), bundle: .main) }
+        let docs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
+        do {
+            try writeProbe(docs: docs, bundle: .main)
+            scheduleDisplayNameRefresh(docs: docs)
+        }
         catch { extensionLog("Probe setup failed: \(error.localizedDescription)") }
     }
 
@@ -21,11 +76,13 @@ enum ProbeBootstrap {
         let docs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
-            return try withStateLockIfAvailable(docs: docs) {
+            let result: SettingsDisplayPreparation = try withStateLockIfAvailable(docs: docs) {
                 let manifest = docs.appendingPathComponent("driftwood-assignments.json")
                 try writeProbeLocked(docs: docs, bundle: .main)
                 return .ready(try Data(contentsOf: manifest))
             } ?? .busy
+            scheduleDisplayNameRefresh(docs: docs)
+            return result
         } catch {
             extensionLog("Settings display refresh failed: \(error.localizedDescription)")
             return .failed
@@ -106,6 +163,55 @@ enum ProbeBootstrap {
             assignments[displayUUID] = try DisplayWallpaperAssignment(displayUUID: displayUUID, entries: [entry], assignmentRevision: 1)
         }
         return assignments
+    }
+
+    static func slotName(screenName: String?, index: Int) -> String {
+        let name = screenName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "Lidscape (\(name.isEmpty ? "Display \(index + 1)" : name))"
+    }
+
+    /// AppKit screen metadata belongs on the main actor. Disk access runs separately.
+    private static func scheduleDisplayNameRefresh(docs: URL) {
+        Task { @MainActor in
+            var names: [String: String] = [:]
+            for screen in NSScreen.screens {
+                guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+                      let uuid = CGDisplayCreateUUIDFromDisplayID(number.uint32Value)?.takeRetainedValue(),
+                      let raw = CFUUIDCreateString(nil, uuid),
+                      let id = WallpaperDisplayUUID.normalized(raw as String) else { continue }
+                names[id] = screen.localizedName
+            }
+            let capturedNames = names
+            guard !capturedNames.isEmpty else { return }
+            displayNameRefresh.submit(docs: docs, names: capturedNames)
+        }
+    }
+
+    /// Update only connected screens whose real name is available. Preserve all
+    /// other slot metadata and do not follow slot or directory symlinks.
+    static func refreshDisplayNames(docs: URL, names: [String: String]) throws {
+        let files = FileManager.default
+        let slots = docs.appendingPathComponent("display-slots", isDirectory: true)
+        guard (try? files.attributesOfItem(atPath: slots.path)[.type] as? FileAttributeType) == .typeDirectory else { return }
+        for (id, rawName) in names {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, WallpaperDisplayUUID.normalized(id) == id else { continue }
+            let directory = slots.appendingPathComponent(id, isDirectory: true)
+            let slot = directory.appendingPathComponent("slot.json")
+            guard (try? files.attributesOfItem(atPath: directory.path)[.type] as? FileAttributeType) == .typeDirectory,
+                  (try? files.attributesOfItem(atPath: slot.path)[.type] as? FileAttributeType) == .typeRegular,
+                  let data = try? Data(contentsOf: slot),
+                  var metadata = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  metadata["displayUUID"] as? String == id else { continue }
+            let label = slotName(screenName: name, index: 0)
+            guard metadata["displayName"] as? String != label else { continue }
+            metadata["displayName"] = label
+            try replaceFile(try JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]), at: slot)
+        }
+    }
+
+    static func replaceFile(_ data: Data, at destination: URL) throws {
+        try data.write(to: destination, options: .atomic)
     }
 
     // All writers that add assignments must hold this lock for the read and write.
