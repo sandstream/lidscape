@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C051D1A20000000000000001 /* WallpaperDisplayNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = C051D1A20000000000000002 /* WallpaperDisplayNames.swift */; };
         AAAA00000000000000000008 /* WallpaperSharedSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000000A /* WallpaperSharedSettings.swift */; };
         AAAA00000000000000000009 /* WallpaperSharedSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000000A /* WallpaperSharedSettings.swift */; };
 		AAAA00000000000000000006 /* PointerGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000007 /* PointerGeometry.swift */; };
@@ -89,6 +90,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C051D1A20000000000000002 /* WallpaperDisplayNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperDisplayNames.swift; sourceTree = "<group>"; };
         AAAA0000000000000000000A /* WallpaperSharedSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperSharedSettings.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000007 /* PointerGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointerGeometry.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000003 /* ProbeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeSettings.swift; sourceTree = "<group>"; };
@@ -165,6 +167,7 @@
 				6FAB47533E90997EE387005D /* PowerMonitor.swift */,
 				F77BFCAFB853A151D7D58EDD /* RuntimeHelpers.swift */,
 				95D156A16431AF483A050B1B /* SettingsProvider.swift */,
+				C051D1A20000000000000002 /* WallpaperDisplayNames.swift */,
 				B75DD9A78098CD265B5A6755 /* SnapshotCreation.swift */,
 				838FBCBCB2880BE313F0B8D5 /* VideoDiscovery.swift */,
 				59E5465904EC6D814DF09F8B /* VideoLibrary.swift */,
@@ -369,6 +372,7 @@
 				109508C19C1F3813B166204C /* PlaylistScheduler.swift in Sources */,
 				DC7833EFD030654A4B352E32 /* PowerMonitor.swift in Sources */,
 				4644D49E493108EFB5FD737D /* ProbeBootstrap.swift in Sources */,
+				C051D1A20000000000000001 /* WallpaperDisplayNames.swift in Sources */,
 				AAAA00000000000000000002 /* ProbeSettings.swift in Sources */,
 				AAAA00000000000000000009 /* WallpaperSharedSettings.swift in Sources */,
 				4A21FEA897F1D866DEBBF3E8 /* ProbeChoiceMapping.swift in Sources */,

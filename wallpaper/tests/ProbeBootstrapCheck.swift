@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 func extensionLog(_ message: String) {}
 
@@ -84,10 +85,91 @@ struct ProbeBootstrapCheck {
             child.waitUntilExit()
             precondition(child.terminationStatus == 0, "A concurrent writer failed")
         }
+        // Listing hides disconnected displays without changing their saved assignment.
+        let retained = try manifest(docs)
+        let slots = [first, second, third]
+        let oneVisible = ProbeChoiceMapping.visibleDisplays(slots, active: Set([first]))
+        precondition(oneVisible == [first], "Disconnected displays must not appear in Settings")
+        let reconnected = ProbeChoiceMapping.visibleDisplays(slots, active: Set([first, second]))
+        precondition(reconnected == [first, second], "A reconnected display must appear again")
+        let afterListing = try manifest(docs)
+        precondition(afterListing == retained, "Listing displays must not change saved assignments")
+        precondition(ProbeChoiceMapping.activeDisplays(current: nil, previous: nil).isEmpty,
+                     "An unknown display list must not expose stale choices")
+        precondition(ProbeChoiceMapping.activeDisplays(current: nil, previous: Set([first])) == Set([first]),
+                     "A failed query must retain the last verified display list")
+        precondition(ProbeChoiceMapping.activeDisplays(current: Set([second]), previous: Set([first])) == Set([second]),
+                     "A successful query must replace the previous display list")
+
         let concurrent = try manifest(docs)
         precondition(concurrent.revision == 6 && concurrent.assignments.count == 3, "Concurrent writers lost a display")
         precondition(concurrent.assignments[first] == original.assignments[first], "Concurrent writers changed an existing display")
         try checkFile(prefsURL, equals: customizedPrefs, "Concurrent writers changed preferences")
+
+        // Timeout and completion may race, but Settings must receive one reply.
+        let replies = DispatchSemaphore(value: 0)
+        let reply = SettingsRefreshReply { replies.signal() }
+        DispatchQueue.concurrentPerform(iterations: 20) { _ in reply.finish() }
+        precondition(replies.wait(timeout: .now()) == .success, "A Settings reply is required")
+        precondition(replies.wait(timeout: .now()) == .timedOut, "Settings must not receive duplicate replies")
+
+        // Multiple Settings requests share one refresh, including after reply timeouts.
+        let coordinator = SettingsRefreshCoordinator()
+        var joins: [(generation: UUID, token: UUID, start: Bool)] = []
+        for _ in 0..<24 { joins.append(coordinator.join(SettingsRefreshReply {})) }
+        precondition(joins.filter(\.start).count == 1, "Concurrent requests must share a refresh")
+        let firstGeneration = joins[0].generation
+        precondition(joins.allSatisfy { $0.generation == firstGeneration }, "Requests must share the same generation")
+        for join in joins { coordinator.timeout(generation: join.generation, token: join.token) }
+        let later = coordinator.join(SettingsRefreshReply {})
+        precondition(!later.start && later.generation == firstGeneration,
+                     "Timeouts must not queue another refresh while work is still active")
+        coordinator.complete(generation: firstGeneration)
+        let next = coordinator.join(SettingsRefreshReply {})
+        precondition(next.start && next.generation != firstGeneration, "Completed work must permit a new refresh")
+        coordinator.complete(generation: firstGeneration)
+        precondition(coordinator.isCurrent(next.generation), "A late old completion must not clear the new refresh")
+        coordinator.complete(generation: next.generation)
+
+        // A Settings refresh must not wait for another bootstrap writer.
+        let lockPath = docs.appendingPathComponent(".lidscape-bootstrap.lock").path
+        let heldFD = open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        precondition(heldFD >= 0 && flock(heldFD, LOCK_EX) == 0, "Could not hold the test lock")
+        let unavailable: Bool? = try ProbeBootstrap.withStateLockIfAvailable(docs: docs) { true }
+        precondition(unavailable == nil, "A busy bootstrap lock must be skipped")
+        flock(heldFD, LOCK_UN)
+        close(heldFD)
+        let available: Bool? = try ProbeBootstrap.withStateLockIfAvailable(docs: docs) { true }
+        precondition(available == true, "An available bootstrap lock must run the refresh")
+
+        // Refreshing for a new screen must retain choices for disconnected screens.
+        let hotplug = docs.appendingPathComponent("hotplug", isDirectory: true)
+        let scene = hotplug.appendingPathComponent("probe-content/Pulse.driftwoodscene", isDirectory: true)
+        try FileManager.default.createDirectory(at: scene, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: scene.appendingPathComponent("scene.json"))
+        func refresh(_ screens: [(displayUUID: String, displayName: String)]) throws {
+            try ProbeBootstrap.withStateLock(docs: hotplug) {
+                let defaults = try ProbeBootstrap.ensureDisplaySlots(docs: hotplug, scene: scene, displays: screens)
+                try ProbeBootstrap.writeStateLocked(docs: hotplug, defaults: defaults, prefsData: customizedPrefs)
+            }
+        }
+        try refresh([(first, "First")])
+        let firstSlot = hotplug.appendingPathComponent("display-slots/\(first)/slot.json")
+        let firstSlotData = try Data(contentsOf: firstSlot)
+        let customized = try WallpaperAssignmentManifest(revision: 2,
+            assignments: [first: assignment(first, title: "Saved", revision: 2)])
+        try JSONEncoder().encode(customized).write(to: hotplug.appendingPathComponent("driftwood-assignments.json"), options: .atomic)
+        try refresh([(second, "Second")])
+        let afterConnect = try manifest(hotplug)
+        precondition(afterConnect.assignments[first] == customized.assignments[first], "Disconnected screen lost its saved assignment")
+        precondition(afterConnect.assignments[second] != nil, "A new screen was not added")
+        try checkFile(firstSlot, equals: firstSlotData, "Disconnected screen lost its choice")
+        try refresh([(first, "First"), (second, "Second")])
+        let afterReconnect = try manifest(hotplug)
+        precondition(afterReconnect == afterConnect, "Reconnecting changed saved assignments")
+        try checkFile(firstSlot, equals: firstSlotData, "Reconnecting changed the stable choice")
+        try checkFile(hotplug.appendingPathComponent("driftwood-prefs.json"), equals: customizedPrefs,
+                      "Display changes altered preferences")
 
         let existing = docs.appendingPathComponent("existing")
         try Data("original".utf8).write(to: existing)

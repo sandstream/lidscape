@@ -110,9 +110,11 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
         var snapshotKeys: [String: String] = [:]
         var batches: [String: Batch] = [:]
         var observing = false
+        var lastActiveDisplayUUIDs: Set<String>?
     }
 
     private let lock = OSAllocatedUnfairLock(initialState: State())
+    private let settingsRefresh = SettingsRefreshCoordinator()
     private let acknowledgmentWriteLock =
         OSAllocatedUnfairLock(initialState: ())
     private let documentsURL = FileManager.default.homeDirectoryForCurrentUser
@@ -267,6 +269,71 @@ final class WallpaperAssignmentStore: @unchecked Sendable {
             $0.displayName.localizedStandardCompare($1.displayName)
                 == .orderedAscending
         }
+    }
+
+    /// Keep Settings responsive even when another writer or Lifecycle is busy.
+    func refreshConnectedDisplayChoices() async {
+        await withCheckedContinuation { continuation in
+            let reply = SettingsRefreshReply { continuation.resume() }
+            let joined = settingsRefresh.join(reply)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1) {
+                self.settingsRefresh.timeout(generation: joined.generation, token: joined.token)
+            }
+            if joined.start {
+                refreshConnectedDisplayChoices(attempt: 0, generation: joined.generation)
+            }
+        }
+    }
+
+    private func refreshConnectedDisplayChoices(attempt: Int, generation: UUID) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard self.settingsRefresh.isCurrent(generation) else { return }
+            switch ProbeBootstrap.prepareForSettings() {
+            case .busy where attempt < 4:
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) {
+                    self.refreshConnectedDisplayChoices(attempt: attempt + 1, generation: generation)
+                }
+            case .busy, .failed:
+                self.settingsRefresh.complete(generation: generation)
+            case .ready(let data):
+                guard let prepared = try? JSONDecoder().decode(WallpaperAssignmentManifest.self, from: data),
+                      self.lock.withLock({ $0.manifest != prepared }) else {
+                    self.settingsRefresh.complete(generation: generation)
+                    return
+                }
+                Lifecycle.queue.async {
+                    guard self.settingsRefresh.isCurrent(generation) else { return }
+                    self.reload(applyToHostedSurfaces: false)
+                    WallpaperSnapshotInvalidator.shared.invalidateSnapshots()
+                    self.settingsRefresh.complete(generation: generation)
+                }
+            }
+        }
+    }
+
+    /// Limit the Settings list to connected displays without deleting saved choices.
+    func visibleSettingsSlots() -> [DisplayWallpaperSlot] {
+        let slots = settingsSlots()
+        let current = activeDisplayUUIDs()
+        let active = lock.withLock { state -> Set<String> in
+            let result = ProbeChoiceMapping.activeDisplays(current: current, previous: state.lastActiveDisplayUUIDs)
+            if let current { state.lastActiveDisplayUUIDs = current }
+            return result
+        }
+        let visible = Set(ProbeChoiceMapping.visibleDisplays(slots.map(\.displayUUID), active: active))
+        // Do not expose a new choice before its assignment is ready for snapshots.
+        return slots.filter { visible.contains($0.displayUUID) && $0.assignment != nil }
+    }
+
+    /// A failed query leaves the existing list available instead of losing choices.
+    private func activeDisplayUUIDs() -> Set<String>? {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return nil }
+        let active = displays.prefix(Int(count)).compactMap(canonicalDisplayUUID)
+        guard active.count == Int(count), !active.isEmpty else { return nil }
+        return Set(active)
     }
 
     func isCurrent(_ assignment: DisplayWallpaperAssignment) -> Bool {
