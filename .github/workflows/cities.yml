@@ -28,6 +28,11 @@ jobs:
           sh wallpaper/tests/check-display-names.sh
           sh wallpaper/tests/check-display-refresh.sh
           sh wallpaper/tests/check-bootstrap.sh
+      - name: Check wallpaper playback, pointer, and caller validation
+        run: |
+          sh wallpaper/tests/check-frame-policy.sh
+          sh wallpaper/tests/check-pointer.sh
+          sh wallpaper/tests/check-caller-validation.sh
       - run: node tools/check-cities.mjs
       - run: node tools/check-camera.mjs
       - run: node tools/check-lid.mjs
