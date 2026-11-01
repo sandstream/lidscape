@@ -124,3 +124,72 @@ test('the offline screen saver draws the city and follows the lid', { timeout: 1
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('a held screen saver stays still, captures its frame, and moves after release', { timeout: 120000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-hold-test-'))
+  let browser
+  try {
+    const bundled = join(dir, 'saver.js')
+    execFileSync('bun', ['build', '--target=browser', '--format=iife', `--outfile=${bundled}`, join(root, 'src/saver-main.js')])
+    const html = await readFile(join(root, 'screensaver/index.html'), 'utf8')
+    const script = await readFile(bundled)
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 600, height: 400 } })
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.addInitScript(() => {
+      window.lidscapeSaverOptions = { city: 'stockholm', theme: 'monet', hold: '1' }
+      window.__captures = []
+      window.webkit = { messageHandlers: {
+        lidscapeFrame: { postMessage() {} },
+        lidscapeCapture: { postMessage(data) { window.__captures.push(data) } },
+      } }
+    })
+    await page.route('http://lidscape.test/**', (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/index.html') return route.fulfill({ contentType: 'text/html', body: html })
+      if (path === '/saver.js') return route.fulfill({ contentType: 'text/javascript', body: script })
+      return route.abort()
+    })
+    await page.goto('http://lidscape.test/index.html?quality=low&lang=en')
+    await page.waitForFunction(() => window.lidscapeSaver?.renderer.info.render.frame > 5)
+    // The native view shows a saved copy of this frame, so it must not change while held.
+    const held = await page.screenshot()
+    await page.waitForTimeout(800)
+    assert.ok(held.equals(await page.screenshot()), 'a held scene must not move')
+    // The lid does not change a held frame; the saved copy is always drawn with the book open.
+    await page.evaluate(() => window.lidscapeSaverSetLidAngle(60))
+    await page.waitForTimeout(300)
+    assert.ok(held.equals(await page.screenshot()), 'the lid must not change a held scene')
+
+    await page.evaluate(() => window.lidscapeSaverCapture('request-1'))
+    await page.waitForFunction(() => window.__captures.length === 1)
+    const result = await page.evaluate(() => window.__captures[0])
+    assert.equal(result.id, 'request-1')
+    const capture = result.data
+    assert.match(capture, /^data:image\/png;base64,/)
+    const size = await page.evaluate(async (url) => {
+      const image = new Image()
+      image.src = url
+      await image.decode()
+      return [image.naturalWidth, image.naturalHeight]
+    }, capture)
+    assert.deepEqual(size, await page.evaluate(() => [window.lidscapeSaver.renderer.domElement.width, window.lidscapeSaver.renderer.domElement.height]))
+
+    await page.evaluate(() => {
+      window.lidscapeSaverCapture('just-before-release')
+      window.lidscapeSaverRelease()
+    })
+    await page.waitForTimeout(800)
+    assert.ok(!held.equals(await page.screenshot()), 'a released scene must move')
+    const releasedFrame = await page.evaluate(() => window.lidscapeSaver.renderer.info.render.frame)
+    assert.equal(await page.evaluate(() => window.__captures.length), 1, 'release must cancel a capture that has not rendered')
+    await page.evaluate(() => window.lidscapeSaverCapture('after-release'))
+    await page.waitForFunction((frame) => window.lidscapeSaver.renderer.info.render.frame >= frame + 5, releasedFrame)
+    assert.equal(await page.evaluate(() => window.__captures.length), 1, 'a moving scene must not be cached as its first frame')
+    assert.deepEqual(errors, [])
+  } finally {
+    await browser?.close()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
