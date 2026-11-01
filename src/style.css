@@ -67,6 +67,14 @@ button, input, select { font: inherit; color: inherit; }
   height: 100%;
 }
 .reloading #hud, .reloading #map-info, .reloading #map-toggle { visibility: hidden; }
+#reload-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .load-failed #hud, .load-failed #map-info, .load-failed #map-toggle, .load-failed #about-btn { visibility: hidden; }
 #load-error {
   position: fixed;

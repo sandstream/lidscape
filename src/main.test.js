@@ -226,6 +226,7 @@ test('a failed module load shows a retry action after a setting change', { timeo
     await error.waitFor({ timeout: 5000 })
     assert.match(await error.textContent(), /kunde inte laddas/i)
     assert.equal(await page.locator('#still-hud').count(), 0)
+    assert.equal(await page.locator('#reload-status').count(), 0)
     assert.equal(await page.locator('#still').isVisible(), true)
     assert.equal(await page.locator('#about-btn').isVisible(), false)
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Försök igen')
@@ -319,6 +320,67 @@ test('a startup error remains actionable when the welcome dialog was open', { ti
   }
 })
 
+test('a recoverable startup error clears when the first frame succeeds', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper'])) } catch {}
+      window.WebSocket = class {}
+    })
+    await useLocalModules(page, { serveFiles: true })
+    const source = await readFile(new URL('./main.js', import.meta.url), 'utf8')
+    const marker = '\nrequestAnimationFrame(frame)'
+    const index = source.lastIndexOf(marker)
+    assert.ok(index > 0)
+    const signal = "\nwindow.dispatchEvent(new ErrorEvent('error', { message: 'Fixture recoverable error', error: new Error('Fixture recoverable error') }));\nwindow.__errorWasShown = Boolean(document.getElementById('load-error'));"
+    const instrumented = source.slice(0, index) + signal + source.slice(index)
+    await page.route('**/src/main.js', (route) => route.fulfill({ contentType: 'text/javascript', body: instrumented }))
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress && window.__errorWasShown && !document.getElementById('load-error'), null, { timeout: 8000 })
+    assert.equal(await page.locator('#about-btn').isVisible(), true)
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('load-failed')), false)
+  } finally {
+    await browser?.close()
+  }
+})
+
+test('a delayed module offers retry and clears the error if it later loads', { timeout: 120000 }, async () => {
+  let browser
+  let releaseModule
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {}
+      const schedule = window.setTimeout
+      window.setTimeout = (callback, delay, ...args) => schedule(callback, delay === 30000 ? 200 : delay, ...args)
+    })
+    await useLocalModules(page, { serveFiles: true })
+    let loads = 0
+    await page.route('**/src/city.js', async (route) => {
+      if (++loads === 2) await new Promise((resolve) => { releaseModule = resolve })
+      return route.fallback()
+    })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await Promise.all([page.waitForURL(/variant=christmas/, { waitUntil: 'commit' }), page.locator('#variant').selectOption('christmas')])
+    const error = page.getByRole('alert')
+    await error.waitFor({ timeout: 5000 })
+    assert.match(await error.textContent(), /kunde inte laddas/i)
+    assert.equal(await page.locator('#reload-status').count(), 0)
+    releaseModule()
+    releaseModule = undefined
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('load-error'), null, { timeout: 60000 })
+    assert.equal(await page.locator('#about-btn').isVisible(), true)
+  } finally {
+    releaseModule?.()
+    await browser?.close()
+  }
+})
+
 test('a setting change shows the last frame and menu until the new scene draws', { timeout: 120000 }, async () => {
   let browser
   try {
@@ -355,6 +417,8 @@ test('a setting change shows the last frame and menu until the new scene draws',
     await Promise.all([page.waitForURL(/variant=christmas/, { waitUntil: 'commit' }), page.locator('#variant').selectOption('christmas')])
 
     await page.waitForSelector('#still')
+    assert.equal(await page.locator('#reload-status').getAttribute('role'), 'status')
+    assert.match(await page.locator('#reload-status').textContent(), /laddar/i)
     const during = await page.evaluate(() => {
       const copy = document.getElementById('still-hud').shadowRoot
       const image = document.getElementById('still')
@@ -372,6 +436,7 @@ test('a setting change shows the last frame and menu until the new scene draws',
     assert.ok(during.copyThemes > 1)
 
     await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still') && !document.getElementById('still-hud'))
+    assert.equal(await page.locator('#reload-status').count(), 0)
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('hud')).visibility), 'visible')
     assert.equal(await page.locator('#variant').inputValue(), 'christmas')
 

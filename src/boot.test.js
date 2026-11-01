@@ -12,8 +12,8 @@ function startWithImage(decode) {
   const window = { addEventListener() {} }
   const image = { decode, remove() {} }
   const document = {
-    createElement: () => image,
-    getElementById: () => ({ after() {} }),
+    createElement: (tag) => tag === 'img' ? image : { setAttribute() {}, remove() {} },
+    getElementById: (id) => id === 'scene' ? { after() {} } : null,
     documentElement: { classList: { add() {}, remove() {} } },
   }
   const sessionStorage = {
@@ -27,7 +27,10 @@ function startWithImage(decode) {
   }
   const clearTimeout = (id) => timers.delete(id)
   const requestAnimationFrame = (callback) => frames.push(callback)
-  runInNewContext(source, { window, document, sessionStorage, setTimeout, clearTimeout, requestAnimationFrame })
+  const localStorage = { getItem: () => null }
+  const location = { search: '?lang=sv' }
+  const navigator = { languages: ['sv'] }
+  runInNewContext(source, { window, document, sessionStorage, localStorage, location, navigator, URLSearchParams, setTimeout, clearTimeout, requestAnimationFrame })
   return { window, timers, frames }
 }
 
@@ -66,6 +69,7 @@ test('a suspended animation frame does not block the new scene indefinitely', as
   runFallback(timers)
   await window.lidscapeStillShown
   frames[0]()
+  window.lidscapeMarkReady()
   assert.equal(timers.size, 0)
 })
 
@@ -82,6 +86,7 @@ test('a normal frame is awaited before the new scene starts', async () => {
   await window.lidscapeStillShown
   await flushPromises()
   assert.equal(ready, true)
+  window.lidscapeMarkReady()
   assert.equal(timers.size, 0)
 })
 
@@ -92,6 +97,7 @@ test('a rejected image decode still waits for a frame', async () => {
   frames[0]()
   runTimer(timers, 0)
   await window.lidscapeStillShown
+  window.lidscapeMarkReady()
   assert.equal(timers.size, 0)
 })
 
@@ -102,5 +108,6 @@ test('a late paint timer is harmless after the fallback', async () => {
   runFallback(timers)
   await window.lidscapeStillShown
   runTimer(timers, 0)
+  window.lidscapeMarkReady()
   assert.equal(timers.size, 0)
 })

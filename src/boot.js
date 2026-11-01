@@ -8,18 +8,24 @@
   let started = false
   window.lidscapeMarkReady = () => {
     started = true
+    clearTimeout(startupTimeout)
+    document.getElementById('load-error')?.remove()
+    document.documentElement.classList.remove('load-failed')
     window.lidscapeMarkReady = undefined
   }
-  function showLoadError() {
-    if (started || document.getElementById('no-webgl')) return
-    if (document.getElementById('load-error')) return
+  function messages() {
     let storedLang
     try { storedLang = localStorage.getItem('lidscape.lang') } catch {}
     const choices = [new URLSearchParams(location.search).get('lang'), storedLang, window.lidscapeMacLanguage, ...(navigator.languages ?? [navigator.language])]
     const lang = choices.map((value) => String(value ?? '').toLowerCase().slice(0, 2)).find((value) => value === 'sv' || value === 'en') ?? 'en'
-    const text = lang === 'sv'
-      ? { error: 'Lidscape kunde inte laddas. Försök igen.', retry: 'Försök igen' }
-      : { error: 'Lidscape could not load. Try again.', retry: 'Try again' }
+    return lang === 'sv'
+      ? { error: 'Lidscape kunde inte laddas. Försök igen.', retry: 'Försök igen', loading: 'Lidscape laddar.' }
+      : { error: 'Lidscape could not load. Try again.', retry: 'Try again', loading: 'Lidscape is loading.' }
+  }
+  function showLoadError() {
+    if (started || document.getElementById('no-webgl')) return
+    if (document.getElementById('load-error')) return
+    const text = messages()
     const panel = document.createElement('div')
     panel.id = 'load-error'
     panel.setAttribute('role', 'alert')
@@ -36,6 +42,7 @@
     })
     panel.append(message, retry)
     document.getElementById('still-hud')?.remove()
+    document.getElementById('reload-status')?.remove()
     for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close()
     document.documentElement.classList.add('load-failed')
     document.body.append(panel)
@@ -46,12 +53,19 @@
     if (mainScript || event.target === window) showLoadError()
   }, true)
   window.addEventListener('unhandledrejection', showLoadError)
+  // A module can remain pending without sending an error event.
+  const startupTimeout = setTimeout(showLoadError, 30000)
   try {
     still = JSON.parse(sessionStorage.getItem('lidscape.still'))
     sessionStorage.removeItem('lidscape.still')
   } catch {}
   if (!still) return
   const added = []
+  const status = document.createElement('p')
+  status.id = 'reload-status'
+  status.setAttribute('role', 'status')
+  status.textContent = messages().loading
+  added.push(status)
   if (typeof still.image === 'string' && still.image.startsWith('data:image/')) {
     const image = document.createElement('img')
     image.id = 'still'
