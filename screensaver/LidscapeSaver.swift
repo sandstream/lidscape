@@ -90,13 +90,13 @@ private final class SensorPing: @unchecked Sendable {
     }
 }
 
-/// The live scene keeps its height and shows more or less at the sides, so the
-/// poster fills the height and crops the sides instead of stretching.
+/// Fill the screen without stretching, even when it is wider than the poster.
 func posterRect(_ image: NSSize, in bounds: NSRect) -> NSRect {
     guard image.width > 0, image.height > 0 else { return bounds }
-    let height = bounds.height
-    let width = height * image.width / image.height
-    return NSRect(x: bounds.midX - width / 2, y: bounds.minY, width: width, height: height)
+    let scale = max(bounds.width / image.width, bounds.height / image.height)
+    let width = image.width * scale
+    let height = image.height * scale
+    return NSRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2, width: width, height: height)
 }
 
 final class PosterView: NSView {
@@ -290,6 +290,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         guard animationActive else { return }
+        refreshPoster()
         startLiveSceneIfNeeded()
         updateFallback()
     }

@@ -69,6 +69,46 @@ for screen in [NSSize(width: 1512, height: 982), NSSize(width: 1920, height: 108
   }
 })
 
+test('the poster covers a 32:9 screen when drawn', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-wide-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+let posterImage = NSImage(size: NSSize(width: 210, height: 90), flipped: false) { rect in
+    NSColor.red.setFill(); rect.fill(); return true
+}
+let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 320, pixelsHigh: 90,
+    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+let context = NSGraphicsContext(bitmapImageRep: bitmap)!
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = context
+NSColor.black.setFill()
+NSRect(x: 0, y: 0, width: 320, height: 90).fill()
+let view = PosterView(frame: NSRect(x: 0, y: 0, width: 320, height: 90))
+view.image = posterImage
+view.draw(view.bounds)
+context.flushGraphics()
+NSGraphicsContext.restoreGraphicsState()
+for x in [0, 319] {
+    let color = bitmap.colorAt(x: x, y: 45)!.usingColorSpace(.deviceRGB)!
+    precondition(color.redComponent > 0.9, "The poster must cover both sides of a 32:9 display")
+}
+`
+    const file = join(dir, 'wide.swift')
+    const executable = join(dir, 'wide')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('the poster fades into the live scene and returns at once', {
   skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
   timeout: 60000,
@@ -127,10 +167,20 @@ extension LidscapeSaverView {
         precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: target), "A PNG frame must be saved")
         refreshPoster()
         precondition(posterIsHeldFrame && poster?.size == NSSize(width: 8, height: 6), "The saved frame must be the poster")
+        let fallback = PosterView(frame: bounds)
+        fallback.image = poster
+        fallbackView = fallback
+        animationActive = true
         setFrameSize(NSSize(width: 800, height: 500))
         precondition(heldFrameURL() != target, "Another screen size needs its own frame")
-        refreshPoster()
-        precondition(!posterIsHeldFrame, "A frame for another size must not be shown")
+        precondition(!posterIsHeldFrame, "Resizing must stop showing a frame for the old size")
+        precondition(fallback.image === poster, "The visible fallback must use the current poster")
+        precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: heldFrameURL()!))
+        setFrameSize(NSSize(width: 200, height: 100))
+        precondition(!posterIsHeldFrame, "A thumbnail must not show the cached frame")
+        setFrameSize(NSSize(width: 800, height: 500))
+        precondition(posterIsHeldFrame, "Growing to a full view must load the frame for that size")
+        precondition(fallback.image === poster, "The visible fallback must use the frame for the new size")
     }
 }
 let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
