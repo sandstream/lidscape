@@ -30,6 +30,8 @@ private var sensorLaunchRequestedAt: Date?
 private let sensorLaunchRetryInterval: TimeInterval = 5
 private let firstFrameTimeout: TimeInterval = 15
 private let stalledFrameTimeout: TimeInterval = 5
+private let heldReleaseTimeout: TimeInterval = 2
+private let heldReleaseAttempts = 3
 
 private struct PageRetryState {
     private(set) var delay: TimeInterval = 1
@@ -162,6 +164,15 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     /// that frame until the poster goes, so the swap shows no change.
     private var posterIsHeldFrame = false
     private var heldFrameRequested = false
+    private var heldReleaseConfirmed = false
+    private var heldReleaseAttempt: UUID?
+    private var heldReleaseOutstanding: Set<UUID> = []
+    private var heldReleaseBlockedLogged = false
+    private var heldReleaseRequestedAt: TimeInterval?
+    private var heldReleaseFailures = 0
+    private var heldReleaseReloadPending = false
+    private var heldReleaseReloadStarted = false
+    private var heldReleaseNavigation: WKNavigation?
     static var heldFrameDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
         .appendingPathComponent(saverBundleID, isDirectory: true)
         .appendingPathComponent("held-frames", isDirectory: true)
@@ -264,6 +275,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     override func startAnimation() {
         super.startAnimation()
         animationActive = true
+        resetHeldRelease()
         refreshPoster()
         if fallbackTimer == nil {
             let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.updateFallback() }
@@ -336,6 +348,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         view.navigationDelegate = self
         view.underPageBackgroundColor = NSColor(red: 0.043, green: 0.086, blue: 0.133, alpha: 1)
         webView = view
+        heldReleaseOutstanding.removeAll()
+        heldReleaseBlockedLogged = false
         addSubview(view)
         addSubview(fallback, positioned: .above, relativeTo: view)
         updateFallback()
@@ -411,6 +425,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     }
 
     private func noteRenderedFrame(now: Date) {
+        // Frames from the previous page must not cancel a scheduled reload.
+        guard !heldReleaseReloadPending else { return }
         if lastRenderSeen == nil {
             saverLog.notice("first rendered frame")
             pageRetry.cancel()
@@ -420,7 +436,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
             heldFrameRequested = true
             webView?.evaluateJavaScript("window.lidscapeSaverCapture?.()") { _, _ in }
         }
-        if lastRenderSeen.map({ now.timeIntervalSince($0) < 0.75 }) != true {
+        if lastRenderSeen.map({ (0..<0.75).contains(now.timeIntervalSince($0)) }) != true {
             renderStartedAt = now
         }
         lastRenderSeen = now
@@ -428,31 +444,89 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         updateFallback()
     }
 
-    private func updateFallback() {
-        let now = Date()
+    private func updateFallback(now: Date = Date(), uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         let isLive = lastRenderSeen.map { now.timeIntervalSince($0) < 0.75 } == true
             && renderStartedAt.map { now.timeIntervalSince($0) >= 1 } == true
         let shouldShow = showsThumbnail || !isLive
-        if let fallbackView, (!fallbackView.isHidden && !fallbackView.fading) != shouldShow {
-            saverLog.debug("fallback visible=\(shouldShow)")
-            if shouldShow {
+        if let fallbackView {
+            if shouldShow && (fallbackView.isHidden || fallbackView.fading) {
                 fallbackView.isHidden = false
-            } else {
-                // A held frame matches the live picture exactly, so it can go at once.
+            } else if !shouldShow && !fallbackView.isHidden && !fallbackView.fading && heldReleaseConfirmed {
                 if posterIsHeldFrame { fallbackView.isHidden = true } else { fallbackView.fadeOut() }
-                webView?.evaluateJavaScript("window.lidscapeSaverRelease?.()") { _, _ in }
+            } else if !shouldShow && !fallbackView.isHidden && !fallbackView.fading,
+                      animationActive, let webView {
+                requestHeldRelease(webView, uptime: uptime)
             }
         }
         guard animationActive, !showsThumbnail, let view = webView else { return }
         let lastSignal = lastRenderSeen ?? pageLoadStartedAt
         let timeout = lastRenderSeen == nil ? firstFrameTimeout : stalledFrameTimeout
-        if let lastSignal, now.timeIntervalSince(lastSignal) >= timeout {
+        if let lastSignal {
+            let elapsed = now.timeIntervalSince(lastSignal)
+            if elapsed < 0 || elapsed >= timeout { schedulePageReload(view) }
+        }
+    }
+
+    private func resetHeldRelease() {
+        heldReleaseAttempt = nil
+        heldReleaseRequestedAt = nil
+        heldReleaseFailures = 0
+        heldReleaseConfirmed = false
+        heldReleaseReloadPending = false
+        heldReleaseReloadStarted = false
+        heldReleaseNavigation = nil
+    }
+
+    private func requestHeldRelease(_ view: WKWebView, uptime: TimeInterval) {
+        guard webView === view, !heldReleaseReloadPending else { return }
+        if let requestedAt = heldReleaseRequestedAt {
+            guard uptime - requestedAt >= heldReleaseTimeout else { return }
+            heldReleaseAttempt = nil
+            heldReleaseRequestedAt = nil
+            heldReleaseFailures += 1
+        }
+        if heldReleaseFailures >= heldReleaseAttempts {
+            guard pageURL != nil, resourcesURL != nil else { return }
+            saverLog.error("screen saver release failed; scheduling a page reload")
+            heldReleaseReloadPending = true
             schedulePageReload(view)
+            return
+        }
+        // A timed-out WebKit call may still be pending after navigation.
+        guard heldReleaseOutstanding.count < heldReleaseAttempts else {
+            if !heldReleaseBlockedLogged {
+                heldReleaseBlockedLogged = true
+                saverLog.error("screen saver release is waiting for unanswered WebKit calls")
+            }
+            return
+        }
+        let attempt = UUID()
+        heldReleaseAttempt = attempt
+        heldReleaseRequestedAt = uptime
+        heldReleaseOutstanding.insert(attempt)
+        let script = "(() => { if (typeof window.lidscapeSaverRelease !== 'function') return false; window.lidscapeSaverRelease(); return true; })()"
+        view.evaluateJavaScript(script) { [weak self, weak view] result, error in
+            guard let self else { return }
+            self.heldReleaseOutstanding.remove(attempt)
+            if self.heldReleaseOutstanding.count < heldReleaseAttempts { self.heldReleaseBlockedLogged = false }
+            guard let view, self.animationActive, self.webView === view,
+                  self.heldReleaseAttempt == attempt, !self.heldReleaseReloadPending else { return }
+            self.heldReleaseAttempt = nil
+            self.heldReleaseRequestedAt = nil
+            guard error == nil, result as? Bool == true else {
+                self.heldReleaseFailures += 1
+                saverLog.warning("screen saver release was not confirmed")
+                return
+            }
+            self.heldReleaseConfirmed = true
+            self.heldReleaseFailures = 0
+            self.updateFallback()
         }
     }
 
     override func stopAnimation() {
         animationActive = false
+        resetHeldRelease()
         fallbackTimer?.invalidate()
         fallbackTimer = nil
         lastRenderSeen = nil
@@ -470,6 +544,8 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
+        heldReleaseOutstanding.removeAll()
+        heldReleaseBlockedLogged = false
         sensorActive = false
         sensorHeartbeatTimer?.invalidate()
         sensorHeartbeatTimer = nil
@@ -715,6 +791,11 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard self.webView === webView else { return }
+        if heldReleaseReloadPending {
+            guard heldReleaseReloadStarted, navigation === heldReleaseNavigation else { return }
+        }
+        resetHeldRelease()
+        heldFrameRequested = false
         pageRetry.cancel()
         if let lastLidAngle { sendLidAngle(lastLidAngle) }
     }
@@ -725,12 +806,23 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         renderStartedAt = nil
         fallbackView?.isHidden = false
         guard let retry = pageRetry.schedule() else { return }
+        heldReleaseAttempt = nil
+        heldReleaseRequestedAt = nil
+        heldReleaseConfirmed = false
+        if heldReleaseReloadPending {
+            heldReleaseReloadStarted = false
+            heldReleaseNavigation = nil
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay) { [weak self, weak view] in
             guard let self, let view, self.webView === view,
                   let page = self.pageURL, let resources = self.resourcesURL,
                   self.pageRetry.begin(generation: retry.generation) else { return }
             self.pageLoadStartedAt = Date()
-            view.loadFileURL(page, allowingReadAccessTo: resources)
+            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)
+            if self.heldReleaseReloadPending {
+                self.heldReleaseReloadStarted = true
+                self.heldReleaseNavigation = navigation
+            }
         }
     }
 
@@ -740,11 +832,13 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if heldReleaseReloadPending && (!heldReleaseReloadStarted || navigation !== heldReleaseNavigation) { return }
         saverLog.error("screen saver page did not load: \(error.localizedDescription)")
         schedulePageReload(webView)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if heldReleaseReloadPending && (!heldReleaseReloadStarted || navigation !== heldReleaseNavigation) { return }
         saverLog.error("screen saver page failed: \(error.localizedDescription)")
         schedulePageReload(webView)
     }

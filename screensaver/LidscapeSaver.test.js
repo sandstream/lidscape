@@ -210,6 +210,329 @@ test('posters cover ultrawide screens and keep the live brush size', async () =>
   if (height * scale < 1400) throw new Error('Posters must be sharp on a Retina screen')
 })
 
+test('a failed held-frame release keeps the poster and retries', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-release-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const source = original
+      .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeAfter(delay: retry.delay)')
+      .replace('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)', '            let navigation = fakeLoadFileURL(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      throw new Error('The retry test seams were not found')
+    }
+    const testSource = `${source}
+private var scheduledReleaseReloads: [() -> Void] = []
+private var releaseReloads = 0
+private func fakeAfter(delay: TimeInterval, perform: @escaping () -> Void) {
+    scheduledReleaseReloads.append(perform)
+}
+private func fakeLoadFileURL(view: WKWebView, page: URL, resources: URL) -> WKNavigation? {
+    releaseReloads += 1
+    return nil
+}
+final class ReleaseWebView: WKWebView {
+    var callbacks: [((Any?, Error?) -> Void)] = []
+    override func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        if script.contains("lidscapeSaverRelease"), let completionHandler { callbacks.append(completionHandler) }
+    }
+}
+extension LidscapeSaverView {
+    func exerciseFailedRelease() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        precondition(content.callbacks.count == 1, "The live page must receive a release request")
+        precondition(!fallback.isHidden, "Keep the poster until release succeeds")
+        content.callbacks[0](nil, NSError(domain: "test", code: 1))
+        updateFallback()
+        precondition(content.callbacks.count == 2, "A failed release must be retried")
+        precondition(!fallback.isHidden, "A failed release must not expose a frozen scene")
+        content.callbacks[1](false, nil)
+        updateFallback()
+        precondition(content.callbacks.count == 3, "A missing release function must be retried")
+        precondition(!fallback.isHidden, "A missing function must not expose a frozen scene")
+        content.callbacks[2](true, nil)
+        precondition(fallback.isHidden, "A confirmed release must show the live scene")
+    }
+    func exerciseTimeout() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        let initial = Date()
+        lastRenderSeen = initial
+        renderStartedAt = initial.addingTimeInterval(-2)
+        updateFallback(now: initial, uptime: 100)
+        updateFallback(now: initial, uptime: 100)
+        precondition(content.callbacks.count == 1, "Do not queue release calls while one is pending")
+        let changedClock = initial.addingTimeInterval(-3600)
+        lastRenderSeen = changedClock
+        renderStartedAt = changedClock.addingTimeInterval(-2)
+        updateFallback(now: changedClock, uptime: 103)
+        precondition(content.callbacks.count == 2, "A release that never answers must time out")
+        content.callbacks[0](true, nil)
+        precondition(!fallback.isHidden, "A late answer after a timeout must be ignored")
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        content.callbacks[1](true, nil)
+        precondition(fallback.isHidden, "The current attempt must release the poster")
+    }
+    func exerciseLateStop() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        precondition(content.callbacks.count == 1)
+        stopAnimation()
+        content.callbacks[0](true, nil)
+        precondition(!animationActive && webView == nil && !fallback.isHidden,
+                     "A stopped view must ignore a late release answer")
+    }
+    func exerciseLateNavigation() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        webView(content, didFinish: nil)
+        updateFallback()
+        precondition(content.callbacks.count == 2)
+        content.callbacks[0](true, nil)
+        precondition(!fallback.isHidden, "An answer from the previous page must be ignored")
+        content.callbacks[1](true, nil)
+        precondition(fallback.isHidden)
+    }
+    func exerciseFailedReload() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        for index in 0..<3 {
+            updateFallback()
+            precondition(content.callbacks.count == index + 1)
+            content.callbacks[index](nil, NSError(domain: "test", code: 1))
+        }
+        updateFallback()
+        precondition(heldReleaseReloadPending && scheduledReleaseReloads.count == 1,
+                     "Repeated release failures must schedule one reload")
+        precondition(!fallback.isHidden)
+        webView(content, didFinish: nil)
+        precondition(heldReleaseReloadPending, "A late finish from the old page must not cancel the reload")
+        noteRenderedFrame(now: Date())
+        precondition(lastRenderSeen == nil, "Old frame signals must not cancel a pending reload")
+        content.callbacks[0](true, nil)
+        precondition(!fallback.isHidden, "An old release answer must not hide the fallback")
+        scheduledReleaseReloads.removeFirst()()
+        precondition(releaseReloads == 1, "The scheduled reload must run")
+        webView(content, didFinish: nil)
+        precondition(!heldReleaseReloadPending, "The new page must accept frame signals")
+    }
+    func exerciseNoAnswersAcrossReload() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        let now = Date()
+        lastRenderSeen = now
+        renderStartedAt = now.addingTimeInterval(-2)
+        for uptime in [100.0, 103, 106, 109] { updateFallback(now: now, uptime: uptime) }
+        precondition(content.callbacks.count == 3 && heldReleaseOutstanding.count == 3,
+                     "A page must have at most three unanswered calls")
+        precondition(heldReleaseReloadPending && scheduledReleaseReloads.count == 1)
+        scheduledReleaseReloads.removeFirst()()
+        webView(content, didFinish: nil)
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        for _ in 0..<5 { updateFallback() }
+        precondition(content.callbacks.count == 3 && !fallback.isHidden,
+                     "A new page must not queue calls while old calls are unanswered")
+        precondition(heldReleaseBlockedLogged, "The blocked state must be logged")
+        content.callbacks[0](nil, NSError(domain: "test", code: 1))
+        updateFallback()
+        precondition(content.callbacks.count == 4 && !fallback.isHidden,
+                     "A late answer may free one place without releasing the poster")
+        precondition(!heldReleaseBlockedLogged, "A freed place must clear the blocked state")
+        content.callbacks[3](true, nil)
+        precondition(fallback.isHidden, "The new page must still be able to recover")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseFailedRelease()
+let timeoutView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+timeoutView.exerciseTimeout()
+let stoppedView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+stoppedView.exerciseLateStop()
+let navigatedView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+navigatedView.exerciseLateNavigation()
+let reloadView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+reloadView.exerciseFailedReload()
+let unansweredView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+unansweredView.exerciseNoAnswersAcrossReload()
+`
+    const file = join(dir, 'release.swift')
+    const executable = join(dir, 'release')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the live-frame clock recovers after the system clock moves backward', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-clock-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseClockJump() {
+        let first = Date()
+        lastRenderSeen = first
+        renderStartedAt = first.addingTimeInterval(-5)
+        let backward = first.addingTimeInterval(-3600)
+        noteRenderedFrame(now: backward)
+        precondition(renderStartedAt == backward, "A backward clock jump must not keep the page in a frozen state")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseClockJump()
+`
+    const file = join(dir, 'clock.swift')
+    const executable = join(dir, 'clock')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a real WebKit page must confirm release before the poster hides', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-real-release-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+final class ReadyDelegate: NSObject, WKNavigationDelegate {
+    var ready = false
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true }
+}
+func waitUntil(_ predicate: () -> Bool) {
+    let deadline = Date(timeIntervalSinceNow: 10)
+    while !predicate() && Date() < deadline {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+    }
+    precondition(predicate(), "WebKit did not complete the test in time")
+}
+extension LidscapeSaverView {
+    func exerciseRealRelease(functionExists: Bool) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let content = WKWebView(frame: bounds, configuration: configuration)
+        let ready = ReadyDelegate()
+        content.navigationDelegate = ready
+        let script = functionExists ? "window.lidscapeSaverRelease = () => { window.released = true }" : ""
+        content.loadHTMLString("<html><script>\\(script)</script></html>", baseURL: nil)
+        waitUntil { ready.ready }
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        if functionExists {
+            waitUntil { fallback.isHidden }
+            precondition(heldReleaseConfirmed, "The page must confirm the call")
+        } else {
+            waitUntil { heldReleaseFailures == 1 }
+            precondition(!fallback.isHidden, "A missing function must leave the poster visible")
+        }
+        animationActive = false
+        resetHeldRelease()
+        content.navigationDelegate = nil
+        content.stopLoading()
+        webView = nil
+        fallbackView = nil
+    }
+    func exerciseRealNavigationIdentity() {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let content = WKWebView(frame: bounds, configuration: configuration)
+        webView = content
+        let old = content.loadHTMLString("<html>old</html>", baseURL: nil)!
+        let current = content.loadHTMLString("<html>new</html>", baseURL: nil)!
+        precondition(old !== current, "The test needs two distinct navigation objects")
+        heldReleaseReloadPending = true
+        heldReleaseReloadStarted = true
+        heldReleaseNavigation = current
+        webView(content, didFinish: old)
+        precondition(heldReleaseReloadPending, "An old navigation must not complete the new reload")
+        webView(content, didFail: old, withError: NSError(domain: "test", code: 1))
+        precondition(heldReleaseReloadPending, "An old navigation error must not replace the new reload")
+        webView(content, didFinish: current)
+        precondition(!heldReleaseReloadPending, "The current navigation must complete the reload")
+        content.stopLoading()
+        webView = nil
+    }
+}
+let present = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+present.exerciseRealRelease(functionExists: true)
+let missing = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+missing.exerciseRealRelease(functionExists: false)
+let navigation = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+navigation.exerciseRealNavigationIdentity()
+`
+    const file = join(dir, 'real-release.swift')
+    const executable = join(dir, 'real-release')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+
 test('the sensor helper can be launched again after a failed startup', {
   skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
   timeout: 60000,
@@ -309,8 +632,8 @@ test('WebKit failures retry with backoff and stop after the view closes', {
     const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
     const source = original
       .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeAfter(delay: retry.delay)')
-      .replace('            view.loadFileURL(page, allowingReadAccessTo: resources)', '            fakeLoadFileURL(view: view, page: page, resources: resources)')
-    if (source === original || source.includes('            view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      .replace('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)', '            let navigation = fakeLoadFileURL(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)')) {
       throw new Error('The retry test seams were not found')
     }
     const testSource = `${source}
@@ -319,8 +642,9 @@ private var reloads = 0
 private func fakeAfter(delay: TimeInterval, perform: @escaping () -> Void) {
     scheduled.append((delay, perform))
 }
-private func fakeLoadFileURL(view: WKWebView, page: URL, resources: URL) {
+private func fakeLoadFileURL(view: WKWebView, page: URL, resources: URL) -> WKNavigation? {
     reloads += 1
+    return nil
 }
 extension LidscapeSaverView {
     func exercisePageFailure() {
@@ -355,9 +679,25 @@ extension LidscapeSaverView {
         precondition(reloads == 7, "A stopped view must not reload")
         precondition(pageRetry.delay == 1, "Stopping must reset the retry delay")
     }
+    func exerciseStallAfterClockJump() {
+        let content = WKWebView(frame: bounds)
+        webView = content
+        fallbackView = PosterView(frame: bounds)
+        animationActive = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback(now: Date(timeIntervalSinceNow: -3600), uptime: 100)
+        precondition(scheduled.count == 1, "A clock jump must not prevent a stalled page from reloading")
+        stopAnimation()
+        scheduled.removeFirst().1()
+    }
 }
 let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
 view.exercisePageFailure()
+let clockView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+clockView.exerciseStallAfterClockJump()
 `
     const file = join(dir, 'webkit.swift')
     const executable = join(dir, 'webkit')
@@ -391,7 +731,7 @@ test('a small screen saver starts one live view when it grows', {
     const testSource = `${source}
 private var resizeLoads = 0
 private var resizeSensorStarts = 0
-private func fakeResizeLoad(view: WKWebView, page: URL, resources: URL) { resizeLoads += 1 }
+private func fakeResizeLoad(view: WKWebView, page: URL, resources: URL) -> WKNavigation? { resizeLoads += 1; return nil }
 private func fakeResizeSensorStart(resources: URL) { resizeSensorStarts += 1 }
 extension LidscapeSaverView {
     func exerciseResize() {
@@ -443,8 +783,8 @@ test('a stalled live screen saver retries without a reload storm', {
     const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
     const source = original
       .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeStallAfter(delay: retry.delay)')
-      .replace('            view.loadFileURL(page, allowingReadAccessTo: resources)', '            fakeStallLoad(view: view, page: page, resources: resources)')
-    if (source === original || source.includes('            view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      .replace('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)', '            let navigation = fakeStallLoad(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)')) {
       throw new Error('The retry test seams were not found')
     }
     const testSource = `${source}
@@ -453,7 +793,7 @@ private var stallReloads = 0
 private func fakeStallAfter(delay: TimeInterval, perform: @escaping () -> Void) {
     scheduledStall.append((delay, perform))
 }
-private func fakeStallLoad(view: WKWebView, page: URL, resources: URL) { stallReloads += 1 }
+private func fakeStallLoad(view: WKWebView, page: URL, resources: URL) -> WKNavigation? { stallReloads += 1; return nil }
 extension LidscapeSaverView {
     func exerciseStalledFrames() {
         let content = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
