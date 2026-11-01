@@ -47,6 +47,7 @@ document.documentElement.lang = lang
 const canvas = document.getElementById('scene')
 // Without WebGL 2 nothing can draw: say so instead of showing a black window.
 if (!canvas.getContext('webgl2')) {
+  window.lidscapeReleaseStill?.()
   document.body.insertAdjacentHTML('beforeend', `<p id="no-webgl">${t.noWebgl}</p>`)
   throw new Error('Lidscape: WebGL 2 is not available')
 }
@@ -262,7 +263,31 @@ for (const [code, l] of Object.entries(LANGUAGES)) mapLangPicker.add(new Option(
 // to almost closed and open again before the lid sensor answers.
 function reloadWithSettings() {
   params.set('progress', progress.toFixed(3))
+  saveStill()
   location.search = params.toString()
+}
+
+// Save the last frame and the menu for src/boot.js, which shows them until the
+// new page draws. The canvas is read in the same task as a render, since the
+// browser clears it after each frame.
+function saveStill() {
+  const hud = document.getElementById('hud')
+  // The markup does not hold the chosen values, so write them into it.
+  for (const option of hud.querySelectorAll('option')) option.toggleAttribute('selected', option.selected)
+  for (const input of hud.querySelectorAll('input')) {
+    input.setAttribute('value', input.value)
+    input.toggleAttribute('checked', input.checked)
+  }
+  composer.render()
+  const still = { image: canvas.toDataURL('image/jpeg', 0.9), hud: hud.outerHTML }
+  try {
+    sessionStorage.setItem('lidscape.still', JSON.stringify(still))
+  } catch {
+    // A large window can pass the storage limit. The menu alone still helps.
+    try {
+      sessionStorage.setItem('lidscape.still', JSON.stringify({ hud: still.hud }))
+    } catch {}
+  }
 }
 
 function changeLanguage(code) {
@@ -737,6 +762,7 @@ function frame() {
   updateLabel()
   if (flight === 0) city.renderReflection(renderer, camera)
   composer.render()
+  window.lidscapeReleaseStill?.()
 
   if (input.cameraOn && (hudTick = (hudTick + 1) % 15) === 0) refreshHud()
   requestAnimationFrame(frame)

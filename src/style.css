@@ -59,6 +59,15 @@ button, input, select { font: inherit; color: inherit; }
   display: block;
 }
 
+/* The last frame and menu before a setting reloaded the page (src/boot.js). */
+#still {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.reloading #hud { visibility: hidden; }
+
 #map-toggle {
   position: fixed;
   top: 36px;

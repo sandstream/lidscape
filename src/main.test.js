@@ -101,3 +101,53 @@ test('changing a setting keeps the book as open as it was', { timeout: 120000 },
     server.kill()
   }
 })
+
+test('a setting change shows the last frame and menu until the new scene draws', { timeout: 120000 }, async () => {
+  const server = spawn('python3', ['tools/serve.py', '5189'], { cwd: root, stdio: 'ignore' })
+  let browser
+  try {
+    await waitForServer()
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+    })
+    await useLocalModules(page)
+    // Slow the scene code after the reload, as a slow Mac or network would.
+    let loads = 0
+    await page.route('**/src/city.js', async (route) => {
+      if (loads++ > 0) await new Promise((resolve) => setTimeout(resolve, 2000))
+      await route.continue()
+    })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await Promise.all([page.waitForURL(/variant=christmas/, { waitUntil: 'commit' }), page.locator('#variant').selectOption('christmas')])
+
+    await page.waitForSelector('#still')
+    const during = await page.evaluate(() => {
+      const copy = document.getElementById('still-hud').shadowRoot
+      const image = document.getElementById('still')
+      return {
+        ready: Boolean(window.lidscape?.progress),
+        imageLoaded: image.complete && image.naturalWidth > 0,
+        imageCovers: image.getBoundingClientRect().width === innerWidth && image.getBoundingClientRect().height === innerHeight,
+        copyVariant: copy.getElementById('variant').value,
+        copyThemes: copy.getElementById('theme').options.length,
+        copyVisible: copy.getElementById('hud').getBoundingClientRect().height > 100,
+        realHud: getComputedStyle(document.getElementById('hud')).visibility,
+      }
+    })
+    assert.deepEqual(during, { ready: false, imageLoaded: true, imageCovers: true, copyVariant: 'christmas', copyThemes: during.copyThemes, copyVisible: true, realHud: 'hidden' })
+    assert.ok(during.copyThemes > 1)
+
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still') && !document.getElementById('still-hud'))
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('hud')).visibility), 'visible')
+    assert.equal(await page.locator('#variant').inputValue(), 'christmas')
+    assert.deepEqual(errors, [])
+  } finally {
+    await browser?.close()
+    server.kill()
+  }
+})
