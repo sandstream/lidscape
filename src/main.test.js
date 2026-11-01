@@ -113,12 +113,25 @@ test('a setting change shows the last frame and menu until the new scene draws',
     page.on('pageerror', (error) => errors.push(error.message))
     await page.addInitScript(() => {
       try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      // Building the scene blocks the page, so the last frame must be on screen
+      // before main.js starts. Its first WebGL call marks that start.
+      new MutationObserver((records, observer) => {
+        const image = document.getElementById('still')
+        if (!image) return
+        observer.disconnect()
+        image.decode().then(() => requestAnimationFrame(() => setTimeout(() => { window.__stillPainted = true })))
+      }).observe(document, { childList: true, subtree: true })
+      const getContext = HTMLCanvasElement.prototype.getContext
+      HTMLCanvasElement.prototype.getContext = function (...args) {
+        window.__stillAtStart ??= document.getElementById('still') ? Boolean(window.__stillPainted) : 'none'
+        return getContext.apply(this, args)
+      }
     })
     await useLocalModules(page)
     // Slow the scene code after the reload, as a slow Mac or network would.
     let loads = 0
     await page.route('**/src/city.js', async (route) => {
-      if (loads++ > 0) await new Promise((resolve) => setTimeout(resolve, 2000))
+      if (loads++ === 1) await new Promise((resolve) => setTimeout(resolve, 2000))
       await route.continue()
     })
     await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
@@ -145,6 +158,12 @@ test('a setting change shows the last frame and menu until the new scene draws',
     await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still') && !document.getElementById('still-hud'))
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('hud')).visibility), 'visible')
     assert.equal(await page.locator('#variant').inputValue(), 'christmas')
+
+    // Without a slow network, the frame must still reach the screen before the
+    // new page starts to build its scene.
+    await Promise.all([page.waitForURL(/theme=monet/), page.locator('#theme').selectOption('monet')])
+    await page.waitForFunction(() => window.lidscape?.progress)
+    assert.equal(await page.evaluate(() => window.__stillAtStart), true)
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()

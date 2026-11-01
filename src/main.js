@@ -21,6 +21,9 @@ import { setupHowTo } from './howto.js'
 import { setupScreenSaverSettings } from './screensaver-settings.js'
 import { setupWallpaperSettings } from './wallpaper-settings.js'
 
+// After a setting change, let src/boot.js put the last frame on screen first.
+await window.lidscapeStillShown
+
 // The screen is modelled at real size: MacBook Pro 14" is about 30 × 19.5 cm.
 const SCREEN_H = 19.5
 const DEFAULT_EYE = { x: 0, y: 1.5, z: 55 }
