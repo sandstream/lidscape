@@ -33,6 +33,11 @@ jobs:
           sh wallpaper/tests/check-frame-policy.sh
           sh wallpaper/tests/check-pointer.sh
           sh wallpaper/tests/check-caller-validation.sh
+      - name: Check wallpaper settings and registration
+        run: |
+          sh wallpaper/tests/check-settings.sh
+          sh wallpaper/tests/check-shared-settings.sh
+          sh wallpaper/tests/check-registration.sh
       - run: node tools/check-cities.mjs
       - run: node tools/check-camera.mjs
       - run: node tools/check-lid.mjs
