@@ -1,21 +1,36 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
+import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 
-export async function useLocalModules(page) {
+export async function useLocalModules(page, { serveFiles = false } = {}) {
   const html = (await readFile(new URL('../index.html', import.meta.url), 'utf8'))
     .replace('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js', '/node_modules/three/build/three.module.js')
     .replace('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/', '/node_modules/three/examples/jsm/')
     .replace('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs', '/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs')
-  await page.route('**/*', (route) => {
+  await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
     if (route.request().resourceType() === 'document' && url.hostname === '127.0.0.1' && url.pathname === '/') {
       return route.fulfill({ contentType: 'text/html', body: html })
     }
     if (url.hostname !== '127.0.0.1') return route.abort()
+    if (serveFiles) {
+      let pathname
+      try { pathname = decodeURIComponent(url.pathname) } catch { return route.fulfill({ status: 400 }) }
+      const file = resolve(root, `.${pathname}`)
+      if (!file.startsWith(`${root.replace(/\/$/, '')}${sep}`)) return route.fulfill({ status: 403 })
+      try {
+        const body = await readFile(file)
+        const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.woff2': 'font/woff2' }
+        return route.fulfill({ body, contentType: types[extname(file)] || 'application/octet-stream', headers: { 'cache-control': 'no-store' } })
+      } catch (error) {
+        if (error.code === 'ENOENT' || error.code === 'EISDIR') return route.fulfill({ status: 404 })
+        throw error
+      }
+    }
     return route.continue()
   })
 }

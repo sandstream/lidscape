@@ -19,9 +19,22 @@
     added.push(image)
     // main.js waits for this before it builds the scene. Building blocks the page
     // for seconds on a Mac, and the frame must be on screen before that starts.
-    window.lidscapeStillShown = image.decode()
-      .catch(() => {})
-      .then(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
+    window.lidscapeStillShown = new Promise((resolve) => {
+      let finished = false
+      const finish = () => {
+        if (finished) return
+        finished = true
+        clearTimeout(timeout)
+        resolve()
+      }
+      // A hidden web view may suspend animation frames. Keep startup bounded.
+      const timeout = setTimeout(finish, 1000)
+      image.decode().catch(() => {}).then(() => {
+        if (!finished) requestAnimationFrame(() => {
+          if (!finished) setTimeout(finish)
+        })
+      })
+    })
   }
   if (typeof still.hud === 'string') {
     // The copy keeps its ids inside a shadow root, so they do not clash with the

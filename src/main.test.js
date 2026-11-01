@@ -1,30 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
 import { useLocalModules } from './browser.test-support.js'
 
-const root = fileURLToPath(new URL('../', import.meta.url))
 const url = 'http://127.0.0.1:5189/'
 
-async function waitForServer() {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    try {
-      const response = await fetch(url)
-      if (response.ok) return
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  throw new Error('Lidscape test server did not start')
-}
-
 test('the browser can switch views, fold the map, zoom, and open the city guide', { timeout: 120000 }, async () => {
-  const server = spawn('python3', ['tools/serve.py', '5189'], { cwd: root, stdio: 'ignore' })
   let browser
   try {
-    await waitForServer()
-    console.log('main browser test: local server ready')
     browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
     console.log('main browser test: Chromium launched')
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
@@ -45,7 +28,7 @@ test('the browser can switch views, fold the map, zoom, and open the city guide'
         sendAngle(angle) { this.onmessage({ data: JSON.stringify({ angle }) }) }
       }
     })
-    await useLocalModules(page)
+    await useLocalModules(page, { serveFiles: true })
     await page.goto(`${url}?view=map&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
     console.log('main browser test: document loaded')
     await page.waitForFunction(() => window.lidscape?.worldMap)
@@ -69,15 +52,12 @@ test('the browser can switch views, fold the map, zoom, and open the city guide'
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()
-    server.kill()
   }
 })
 
 test('changing a setting keeps the book as open as it was', { timeout: 120000 }, async () => {
-  const server = spawn('python3', ['tools/serve.py', '5189'], { cwd: root, stdio: 'ignore' })
   let browser
   try {
-    await waitForServer()
     browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
     await page.addInitScript(() => {
@@ -87,7 +67,7 @@ test('changing a setting keeps the book as open as it was', { timeout: 120000 },
         sendAngle(angle) { this.onmessage({ data: JSON.stringify({ angle }) }) }
       }
     })
-    await useLocalModules(page)
+    await useLocalModules(page, { serveFiles: true })
     await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => window.lidscape?.progress)
     await page.evaluate(() => { window.__lidSocket.onopen(); window.__lidSocket.sendAngle(105) })
@@ -98,21 +78,40 @@ test('changing a setting keeps the book as open as it was', { timeout: 120000 },
     assert.ok(await page.evaluate(() => window.lidscape.progress()) > 0.99)
   } finally {
     await browser?.close()
-    server.kill()
+  }
+})
+
+test('a paused animation frame does not prevent the app from starting after a setting change', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {}
+      if (sessionStorage.getItem('lidscape.still')) window.requestAnimationFrame = () => 0
+    })
+    await useLocalModules(page, { serveFiles: true })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await Promise.all([page.waitForURL(/variant=christmas/), page.locator('#variant').selectOption('christmas')])
+    await page.waitForFunction(() => window.lidscape?.progress, null, { timeout: 15000, polling: 100 })
+    assert.equal(await page.evaluate(() => document.getElementById('variant').value), 'christmas')
+  } finally {
+    await browser?.close()
   }
 })
 
 test('a setting change shows the last frame and menu until the new scene draws', { timeout: 120000 }, async () => {
-  const server = spawn('python3', ['tools/serve.py', '5189'], { cwd: root, stdio: 'ignore' })
   let browser
   try {
-    await waitForServer()
     browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.addInitScript(() => {
       try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {}
       // Building the scene blocks the page, so the last frame must be on screen
       // before main.js starts. Its first WebGL call marks that start.
       new MutationObserver((records, observer) => {
@@ -127,12 +126,12 @@ test('a setting change shows the last frame and menu until the new scene draws',
         return getContext.apply(this, args)
       }
     })
-    await useLocalModules(page)
+    await useLocalModules(page, { serveFiles: true })
     // Slow the scene code after the reload, as a slow Mac or network would.
     let loads = 0
     await page.route('**/src/city.js', async (route) => {
       if (loads++ === 1) await new Promise((resolve) => setTimeout(resolve, 2000))
-      await route.continue()
+      await route.fallback()
     })
     await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => window.lidscape?.progress)
@@ -167,6 +166,5 @@ test('a setting change shows the last frame and menu until the new scene draws',
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()
-    server.kill()
   }
 })
