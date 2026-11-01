@@ -232,6 +232,8 @@ function enterCity(id) {
     params.set('city', id)
     params.set('view', 'map')
     params.set('enter', '1')
+    params.set('progress', progress.toFixed(3))
+    saveStill()
     location.search = params.toString()
     return
   }
@@ -274,15 +276,20 @@ function reloadWithSettings() {
 // new page draws. The canvas is read in the same task as a render, since the
 // browser clears it after each frame.
 function saveStill() {
-  const hud = document.getElementById('hud')
+  const hud = document.getElementById(document.body.classList.contains('map-view') ? 'map-info' : 'hud')
   // The markup does not hold the chosen values, so write them into it.
   for (const option of hud.querySelectorAll('option')) option.toggleAttribute('selected', option.selected)
   for (const input of hud.querySelectorAll('input')) {
     input.setAttribute('value', input.value)
     input.toggleAttribute('checked', input.checked)
   }
-  composer.render()
-  const still = { image: canvas.toDataURL('image/jpeg', 0.9), hud: hud.outerHTML }
+  const still = { hud: document.getElementById('map-toggle').outerHTML + hud.outerHTML }
+  try {
+    composer.render()
+    still.image = canvas.toDataURL('image/jpeg', 0.9)
+  } catch {
+    // A failed frame capture must not prevent the setting from changing.
+  }
   try {
     sessionStorage.setItem('lidscape.still', JSON.stringify(still))
   } catch {
@@ -765,6 +772,7 @@ function frame() {
   updateLabel()
   if (flight === 0) city.renderReflection(renderer, camera)
   composer.render()
+  window.lidscapeMarkReady?.()
   window.lidscapeReleaseStill?.()
 
   if (input.cameraOn && (hudTick = (hudTick + 1) % 15) === 0) refreshHud()

@@ -5,6 +5,47 @@
 // This is a classic script: it runs before the modules have loaded.
 (() => {
   let still = null
+  let started = false
+  window.lidscapeMarkReady = () => {
+    started = true
+    window.lidscapeMarkReady = undefined
+  }
+  function showLoadError() {
+    if (started || document.getElementById('no-webgl')) return
+    if (document.getElementById('load-error')) return
+    let storedLang
+    try { storedLang = localStorage.getItem('lidscape.lang') } catch {}
+    const choices = [new URLSearchParams(location.search).get('lang'), storedLang, window.lidscapeMacLanguage, ...(navigator.languages ?? [navigator.language])]
+    const lang = choices.map((value) => String(value ?? '').toLowerCase().slice(0, 2)).find((value) => value === 'sv' || value === 'en') ?? 'en'
+    const text = lang === 'sv'
+      ? { error: 'Lidscape kunde inte laddas. Försök igen.', retry: 'Försök igen' }
+      : { error: 'Lidscape could not load. Try again.', retry: 'Try again' }
+    const panel = document.createElement('div')
+    panel.id = 'load-error'
+    panel.setAttribute('role', 'alert')
+    const message = document.createElement('p')
+    message.textContent = text.error
+    const retry = document.createElement('button')
+    retry.type = 'button'
+    retry.textContent = text.retry
+    retry.addEventListener('click', () => {
+      if (still) {
+        try { sessionStorage.setItem('lidscape.still', JSON.stringify(still)) } catch {}
+      }
+      location.reload()
+    })
+    panel.append(message, retry)
+    document.getElementById('still-hud')?.remove()
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close()
+    document.documentElement.classList.add('load-failed')
+    document.body.append(panel)
+    retry.focus()
+  }
+  window.addEventListener('error', (event) => {
+    const mainScript = event.target?.tagName === 'SCRIPT' && event.target.getAttribute('src') === 'src/main.js'
+    if (mainScript || event.target === window) showLoadError()
+  }, true)
+  window.addEventListener('unhandledrejection', showLoadError)
   try {
     still = JSON.parse(sessionStorage.getItem('lidscape.still'))
     sessionStorage.removeItem('lidscape.still')

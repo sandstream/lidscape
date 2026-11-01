@@ -9,7 +9,7 @@ function startWithImage(decode) {
   let nextTimer = 0
   const timers = new Map()
   const frames = []
-  const window = {}
+  const window = { addEventListener() {} }
   const image = { decode, remove() {} }
   const document = {
     createElement: () => image,

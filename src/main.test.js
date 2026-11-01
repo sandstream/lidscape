@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { useLocalModules } from './browser.test-support.js'
 
@@ -81,6 +82,86 @@ test('changing a setting keeps the book as open as it was', { timeout: 120000 },
   }
 })
 
+test('changing language in the map keeps the map menu visible during reload', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => { window.WebSocket = class {} })
+    await useLocalModules(page, { serveFiles: true })
+    let loads = 0
+    await page.route('**/src/city.js', async (route) => {
+      if (loads++ > 0) await new Promise((resolve) => setTimeout(resolve, 2000))
+      await route.fallback()
+    })
+    await page.goto(`${url}?view=map&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.worldMap && document.body.classList.contains('map-view'))
+    await Promise.all([page.waitForURL(/lang=en/, { waitUntil: 'commit' }), page.locator('#map-lang').selectOption('en')])
+    await page.waitForSelector('#still-hud', { state: 'attached' })
+    const copy = await page.evaluate(() => {
+      const shadow = document.getElementById('still-hud').shadowRoot
+      const map = shadow.getElementById('map-info')
+      const toggle = shadow.getElementById('map-toggle')
+      const mapStyle = map && getComputedStyle(map)
+      const toggleStyle = toggle && getComputedStyle(toggle)
+      return {
+        mapVisible: Boolean(map && !map.hidden && mapStyle.display !== 'none' && mapStyle.visibility === 'visible' && Number(mapStyle.opacity) > 0 && map.getBoundingClientRect().width > 0),
+        cityMenu: Boolean(shadow.getElementById('hud')),
+        language: shadow.getElementById('map-lang')?.value,
+        toggleText: toggle?.textContent.trim(),
+        toggleVisible: Boolean(toggle && toggleStyle.display !== 'none' && toggleStyle.visibility === 'visible' && toggle.getBoundingClientRect().width > 0),
+        realToggleHidden: getComputedStyle(document.getElementById('map-toggle')).visibility === 'hidden',
+      }
+    })
+    assert.deepEqual(copy, { mapVisible: true, cityMenu: false, language: 'en', toggleText: 'Tillbaka till staden', toggleVisible: true, realToggleHidden: true })
+    await page.waitForFunction(() => window.lidscape?.worldMap && !document.getElementById('still-hud'))
+  } finally {
+    await browser?.close()
+  }
+})
+
+test('entering another city keeps the map frame while it loads', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      window.WebSocket = class {
+        constructor() { window.__lidSocket = this }
+        sendAngle(angle) { this.onmessage({ data: JSON.stringify({ angle }) }) }
+      }
+    })
+    await useLocalModules(page, { serveFiles: true })
+    await page.route('**/src/cities/index.js', (route) => route.fulfill({
+      contentType: 'text/javascript',
+      body: "import { stockholm } from './stockholm.js'; export const CITIES = [stockholm, { ...stockholm, id: 'testcity', name: 'Test City' }]; export function findCity(id) { return CITIES.find((c) => c.id === id) ?? CITIES[0] }",
+    }))
+    let loads = 0
+    await page.route('**/src/city.js', async (route) => {
+      if (loads++ > 0) await new Promise((resolve) => setTimeout(resolve, 2000))
+      await route.fallback()
+    })
+    await page.goto(`${url}?view=map&city=stockholm&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.worldMap && document.body.classList.contains('map-view'))
+    if (await page.locator('#howto').evaluate((dialog) => dialog.open)) await page.locator('#howto button').click()
+    await page.evaluate(() => { window.__lidSocket.onopen(); window.__lidSocket.sendAngle(70) })
+    await page.waitForFunction(() => window.lidscape.progress() < 0.45)
+    const before = await page.evaluate(() => window.lidscape.progress())
+    await Promise.all([page.waitForURL(/city=testcity/, { waitUntil: 'commit' }), page.locator('#map-cities button').nth(1).click()])
+    await page.waitForSelector('#still', { timeout: 5000 })
+    const visibleMap = await page.evaluate(() => {
+      const map = document.getElementById('still-hud')?.shadowRoot?.getElementById('map-info')
+      const style = map && getComputedStyle(map)
+      return Boolean(map && !map.hidden && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > 0 && map.getBoundingClientRect().width > 0)
+    })
+    assert.equal(visibleMap, true)
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still'))
+    assert.ok(Math.abs((await page.evaluate(() => window.lidscape.progress())) - before) < 0.1)
+  } finally {
+    await browser?.close()
+  }
+})
+
 test('a paused animation frame does not prevent the app from starting after a setting change', { timeout: 120000 }, async () => {
   let browser
   try {
@@ -97,6 +178,142 @@ test('a paused animation frame does not prevent the app from starting after a se
     await Promise.all([page.waitForURL(/variant=christmas/), page.locator('#variant').selectOption('christmas')])
     await page.waitForFunction(() => window.lidscape?.progress, null, { timeout: 15000, polling: 100 })
     assert.equal(await page.evaluate(() => document.getElementById('variant').value), 'christmas')
+  } finally {
+    await browser?.close()
+  }
+})
+
+test('a setting still changes if the previous frame cannot be captured', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {}
+      HTMLCanvasElement.prototype.toDataURL = () => { throw new DOMException('Capture blocked', 'SecurityError') }
+    })
+    await useLocalModules(page, { serveFiles: true })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await Promise.all([page.waitForURL(/variant=christmas/, { waitUntil: 'commit', timeout: 5000 }), page.locator('#variant').selectOption('christmas')])
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still-hud'))
+    assert.equal(await page.locator('#variant').inputValue(), 'christmas')
+  } finally {
+    await browser?.close()
+  }
+})
+
+test('a failed module load shows a retry action after a setting change', { timeout: 180000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {}
+    })
+    await useLocalModules(page, { serveFiles: true })
+    let loads = 0
+    await page.route('**/src/city.js', async (route) => {
+      if ([2, 4].includes(++loads)) return route.abort('failed')
+      return route.fallback()
+    })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await Promise.all([page.waitForURL(/variant=christmas/, { waitUntil: 'commit' }), page.locator('#variant').selectOption('christmas')])
+    const error = page.getByRole('alert')
+    await error.waitFor({ timeout: 5000 })
+    assert.match(await error.textContent(), /kunde inte laddas/i)
+    assert.equal(await page.locator('#still-hud').count(), 0)
+    assert.equal(await page.locator('#still').isVisible(), true)
+    assert.equal(await page.locator('#about-btn').isVisible(), false)
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Försök igen')
+    await page.keyboard.press('Tab')
+    assert.notEqual(await page.evaluate(() => document.activeElement?.id), 'about-btn')
+    await page.getByRole('button', { name: 'Försök igen' }).click()
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still-hud'), null, { timeout: 60000 })
+    assert.equal(await page.locator('#variant').inputValue(), 'christmas')
+
+    // The first load has no saved frame. It still needs a useful error and retry.
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=en`, { waitUntil: 'domcontentloaded' })
+    await error.waitFor({ timeout: 5000 })
+    assert.match(await error.textContent(), /could not load/i)
+    await page.getByRole('button', { name: 'Try again' }).click()
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('load-error'), null, { timeout: 60000 })
+  } finally {
+    await browser?.close()
+  }
+})
+
+test('a module initialization error shows a retry action', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => {
+      try { localStorage.setItem('lidscape.howto', JSON.stringify(['paper', 'paper+christmas'])) } catch {}
+      window.WebSocket = class {}
+    })
+    await useLocalModules(page, { serveFiles: true })
+    let loads = 0
+    await page.route('**/src/city.js', (route) => {
+      if (++loads === 2) return route.fulfill({ contentType: 'text/javascript', body: "export function buildCity() {}\nthrow new Error('Fixture initialization error')" })
+      return route.fallback()
+    })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.lidscape?.progress)
+    await Promise.all([page.waitForURL(/variant=christmas/, { waitUntil: 'commit' }), page.locator('#variant').selectOption('christmas')])
+    const error = page.getByRole('alert')
+    await error.waitFor({ timeout: 5000 })
+    assert.match(await error.textContent(), /kunde inte laddas/i)
+    await page.getByRole('button', { name: 'Försök igen' }).click()
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('still-hud'))
+
+    // A later unrelated error must not replace an already running scene.
+    const laterError = page.waitForEvent('pageerror')
+    await page.evaluate(() => { setTimeout(() => { throw new Error('Fixture late error') }) })
+    assert.match((await laterError).message, /Fixture late error/)
+    assert.equal(await page.locator('#load-error').count(), 0)
+
+    // The existing WebGL explanation must not be replaced by the generic error.
+    const noWebgl = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await noWebgl.addInitScript(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext
+      HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+        return type === 'webgl2' ? null : getContext.call(this, type, ...args)
+      }
+    })
+    await useLocalModules(noWebgl, { serveFiles: true })
+    await noWebgl.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    await noWebgl.locator('#no-webgl').waitFor()
+    assert.equal(await noWebgl.locator('#load-error').count(), 0)
+  } finally {
+    await browser?.close()
+  }
+})
+
+test('a startup error remains actionable when the welcome dialog was open', { timeout: 120000 }, async () => {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'] })
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.addInitScript(() => { window.WebSocket = class {} })
+    await useLocalModules(page, { serveFiles: true })
+    const source = await readFile(new URL('./main.js', import.meta.url), 'utf8')
+    const start = 'setupHowTo({ t, lang, theme, variant })'
+    assert.ok(source.includes(start))
+    let loads = 0
+    await page.route('**/src/main.js', (route) => {
+      if (++loads === 1) return route.fulfill({ contentType: 'text/javascript', body: source.replace(start, `${start}\nthrow new Error('Fixture after welcome dialog')`) })
+      return route.fallback()
+    })
+    await page.goto(`${url}?city=stockholm&theme=paper&quality=low&lang=sv`, { waitUntil: 'domcontentloaded' })
+    const error = page.getByRole('alert')
+    await error.waitFor({ timeout: 5000 })
+    assert.equal(await page.locator('#howto').evaluate((dialog) => dialog.open), false)
+    await page.getByRole('button', { name: 'Försök igen' }).click()
+    await page.waitForFunction(() => window.lidscape?.progress && !document.getElementById('load-error'))
   } finally {
     await browser?.close()
   }
