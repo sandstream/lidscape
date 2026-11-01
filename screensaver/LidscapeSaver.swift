@@ -99,8 +99,35 @@ func posterRect(_ image: NSSize, in bounds: NSRect) -> NSRect {
     return NSRect(x: bounds.midX - width / 2, y: bounds.minY, width: width, height: height)
 }
 
-private final class PosterView: NSView {
+final class PosterView: NSView {
     var image: NSImage? { didSet { needsDisplay = true } }
+    private(set) var fading = false
+
+    /// Showing the poster again cancels a fade at once.
+    override var isHidden: Bool {
+        didSet {
+            guard !isHidden else { return }
+            fading = false
+            alphaValue = 1
+        }
+    }
+
+    /// Fade instead of cutting: the live brush pattern never lines up with the poster's.
+    func fadeOut() {
+        guard !isHidden, !fading else { return }
+        fading = true
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.5
+            animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.fading else { return }
+                self.fading = false
+                self.isHidden = true
+                self.alphaValue = 1
+            }
+        })
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let image else { return }
@@ -334,9 +361,9 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let isLive = lastRenderSeen.map { now.timeIntervalSince($0) < 0.75 } == true
             && renderStartedAt.map { now.timeIntervalSince($0) >= 1 } == true
         let shouldShow = showsThumbnail || !isLive
-        if fallbackView?.isHidden != !shouldShow {
+        if let fallbackView, (!fallbackView.isHidden && !fallbackView.fading) != shouldShow {
             saverLog.debug("fallback visible=\(shouldShow)")
-            fallbackView?.isHidden = !shouldShow
+            if shouldShow { fallbackView.isHidden = false } else { fallbackView.fadeOut() }
         }
         guard animationActive, !showsThumbnail, let view = webView else { return }
         let lastSignal = lastRenderSeen ?? pageLoadStartedAt

@@ -69,11 +69,51 @@ for screen in [NSSize(width: 1512, height: 982), NSSize(width: 1920, height: 108
   }
 })
 
-test('posters are wide enough to cover ultrawide screens', async () => {
+test('the poster fades into the live scene and returns at once', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-fade-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    // The live brush pattern never lines up with the poster's, so a cut shows as a jump.
+    const testSource = `${source}
+func runLoop(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+let poster = PosterView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+poster.wantsLayer = true
+poster.fadeOut()
+precondition(!poster.isHidden, "The poster must stay while it fades")
+runLoop(0.8)
+precondition(poster.isHidden && poster.alphaValue == 1, "The poster must be hidden after the fade")
+poster.isHidden = false
+poster.fadeOut()
+runLoop(0.1)
+poster.isHidden = false
+runLoop(0.8)
+precondition(!poster.isHidden && poster.alphaValue == 1, "A poster shown again must cancel the fade")
+`
+    const file = join(dir, 'fade.swift')
+    const executable = join(dir, 'fade')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('posters cover ultrawide screens and keep the live brush size', async () => {
   const source = await readFile(fileURLToPath(new URL('./generate-thumbnail.mjs', import.meta.url)), 'utf8')
-  const poster = source.match(/name: `poster-city-[\s\S]*?width: (\d+), height: (\d+)/)
+  const poster = source.match(/name: `poster-city-[\s\S]*?width: (\d+), height: (\d+), scale: (\d+) \/ (\d+)/)
   if (!poster) throw new Error('The poster size was not found')
-  if (Number(poster[1]) / Number(poster[2]) < 21 / 9) throw new Error('Posters must be at least 21:9')
+  const [width, height] = [Number(poster[1]), Number(poster[2])]
+  const scale = Number(poster[3]) / Number(poster[4])
+  if (width / height < 21 / 9) throw new Error('Posters must be at least 21:9')
+  // Brush strokes and glow are sized in screen points. A poster drawn at another
+  // point height shows finer strokes than the live scene that replaces it.
+  if (height < 900 || height > 1100) throw new Error('Posters must use a laptop screen height in points')
+  if (height * scale < 1400) throw new Error('Posters must be sharp on a Retina screen')
 })
 
 test('the sensor helper can be launched again after a failed startup', {
