@@ -103,6 +103,50 @@ precondition(!poster.isHidden && poster.alphaValue == 1, "A poster shown again m
   }
 })
 
+test('the screen saver saves its first live frame and shows it at the next start', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-held-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+let cache = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+LidscapeSaverView.heldFrameDirectory = cache
+let image = NSImage(size: NSSize(width: 8, height: 6), flipped: false) { rect in
+    NSColor.systemRed.setFill(); rect.fill(); return true
+}
+let png = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+let dataURL = "data:image/png;base64," + png.base64EncodedString()
+extension LidscapeSaverView {
+    func exerciseHeldFrame() {
+        let target = heldFrameURL()!
+        precondition(!LidscapeSaverView.saveHeldFrame("data:text/html;base64,PGI+", to: target), "Only PNG data may be saved")
+        precondition(!LidscapeSaverView.saveHeldFrame("data:image/png;base64,bm90IGEgcG5n", to: target), "Broken PNG data must be rejected")
+        precondition(!FileManager.default.fileExists(atPath: target.path))
+        precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: target), "A PNG frame must be saved")
+        refreshPoster()
+        precondition(posterIsHeldFrame && poster?.size == NSSize(width: 8, height: 6), "The saved frame must be the poster")
+        setFrameSize(NSSize(width: 800, height: 500))
+        precondition(heldFrameURL() != target, "Another screen size needs its own frame")
+        refreshPoster()
+        precondition(!posterIsHeldFrame, "A frame for another size must not be shown")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseHeldFrame()
+`
+    const file = join(dir, 'held.swift')
+    const executable = join(dir, 'held')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [join(dir, 'cache')], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('posters cover ultrawide screens and keep the live brush size', async () => {
   const source = await readFile(fileURLToPath(new URL('./generate-thumbnail.mjs', import.meta.url)), 'utf8')
   const poster = source.match(/name: `poster-city-[\s\S]*?width: (\d+), height: (\d+), scale: (\d+) \/ (\d+)/)

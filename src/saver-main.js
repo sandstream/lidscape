@@ -96,6 +96,18 @@ window.lidscapeSaverClearLidAngle = () => {
 }
 const clock = new THREE.Clock()
 let progress = 1
+// The native screen saver shows a saved copy of the first frame while the scene
+// starts. Hold the scene at time zero with the book open until it removes that
+// copy, so the swap shows no change. The copy is captured from the canvas, since
+// WebKit snapshots often miss WebGL.
+let held = params.get('hold') === '1'
+let captureRequested = false
+window.lidscapeSaverCapture = () => { captureRequested = true }
+window.lidscapeSaverRelease = () => {
+  if (!held) return
+  held = false
+  clock.start()
+}
 let running = true
 let paused = false
 let frameRequest = null
@@ -135,11 +147,16 @@ function frame(now) {
   previousFrame = now
   const dt = Math.min(clock.getDelta(), 0.1)
   const target = lid.connected && lid.progress != null ? lid.progress : 1
-  progress += (target - progress) * (1 - Math.exp(-dt * 6))
+  progress = held ? 1 : progress + (target - progress) * (1 - Math.exp(-dt * 6))
   post.update(settings, progress)
-  city.update(progress, 1, clock.elapsedTime)
+  city.update(progress, 1, held ? 0 : clock.elapsedTime)
   if (!lowQuality) city.renderReflection(renderer, camera)
   composer.render()
+  if (captureRequested) {
+    captureRequested = false
+    // Read the canvas in the same task as the render, before the browser clears it.
+    window.webkit?.messageHandlers?.lidscapeCapture?.postMessage(renderer.domElement.toDataURL('image/png'))
+  }
   updateLabel()
   window.lidscapeSaverLastRender = Date.now()
   if (now - previousFrameSignal >= 250) {

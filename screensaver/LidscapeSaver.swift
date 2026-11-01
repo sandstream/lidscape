@@ -158,6 +158,13 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     private var sensorActive = false
     private var sensorHelperURL: URL?
     private var lastLidAngle: Int?
+    /// The poster is a saved copy of this screen's first live frame. The page holds
+    /// that frame until the poster goes, so the swap shows no change.
+    private var posterIsHeldFrame = false
+    private var heldFrameRequested = false
+    static var heldFrameDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+        .appendingPathComponent(saverBundleID, isDirectory: true)
+        .appendingPathComponent("held-frames", isDirectory: true)
     private var settingsSheet: NSWindow?
     private var cityChoice: NSPopUpButton?
     private var themeChoice: NSPopUpButton?
@@ -300,12 +307,15 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(WeakFrameHandler(receiver: self), name: "lidscapeFrame")
+        configuration.userContentController.add(WeakFrameHandler(receiver: self), name: "lidscapeCapture")
+        heldFrameRequested = false
         let settings = loadSettings()
         let options: [String: String] = [
             "city": settings.city,
             "theme": settings.theme,
             "variant": settings.variant,
             "quality": isPreview ? "low" : "high",
+            "hold": "1",
         ]
         if let data = try? JSONSerialization.data(withJSONObject: options),
            let json = String(data: data, encoding: .utf8) {
@@ -339,14 +349,75 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "lidscapeFrame", let webView, message.webView === webView else { return }
+        guard let webView, message.webView === webView else { return }
+        if message.name == "lidscapeCapture" {
+            guard let dataURL = message.body as? String, let target = heldFrameURL() else { return }
+            DispatchQueue.global(qos: .utility).async {
+                if Self.saveHeldFrame(dataURL, to: target) { Self.pruneHeldFrames(keeping: target) }
+            }
+            return
+        }
+        guard message.name == "lidscapeFrame" else { return }
         noteRenderedFrame(now: Date())
+    }
+
+    /// One saved frame per screen size, settings, and build. The page's code is part
+    /// of the key, because a changed scene must not show an old frame.
+    func heldFrameURL() -> URL? {
+        guard let directory = Self.heldFrameDirectory, bounds.width >= 1, bounds.height >= 1 else { return nil }
+        let settings = loadSettings()
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let page = Bundle(for: Self.self).url(forResource: "saver", withExtension: "js", subdirectory: "web")
+        let attributes = page.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
+        let build = [
+            Bundle(for: Self.self).object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0",
+            String(attributes?[.size] as? Int ?? 0),
+            String(Int((attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)),
+        ].joined(separator: "-")
+        let parts = [settings.city, settings.theme, settings.variant.isEmpty ? "none" : settings.variant,
+                     "\(Int(bounds.width))x\(Int(bounds.height))@\(Int(scale * 100))", build]
+        let name = parts.map { $0.filter { $0.isLetter || $0.isNumber || "-x@".contains($0) } }.joined(separator: "_")
+        return directory.appendingPathComponent(name).appendingPathExtension("png")
+    }
+
+    /// Accept only a PNG that decodes, and only up to the size of a large screen.
+    nonisolated static func saveHeldFrame(_ dataURL: String, to target: URL) -> Bool {
+        let prefix = "data:image/png;base64,"
+        guard dataURL.hasPrefix(prefix), dataURL.utf8.count < 96_000_000,
+              let data = Data(base64Encoded: String(dataURL.dropFirst(prefix.count))),
+              data.starts(with: [0x89, 0x50, 0x4E, 0x47]),
+              NSBitmapImageRep(data: data) != nil else { return false }
+        do {
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: target, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Keep the newest few frames, so old sizes and settings do not fill the disk.
+    nonisolated static func pruneHeldFrames(keeping current: URL, limit: Int = 6) {
+        let directory = current.deletingLastPathComponent()
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let dated = files.filter { $0.pathExtension == "png" }.map { url in
+            (url, (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+        }
+        for (url, _) in dated.sorted(by: { $0.1 > $1.1 }).dropFirst(limit) where url != current {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     private func noteRenderedFrame(now: Date) {
         if lastRenderSeen == nil {
             saverLog.notice("first rendered frame")
             pageRetry.cancel()
+        }
+        // Save this screen's held frame once, while the page still holds it.
+        if !posterIsHeldFrame, !heldFrameRequested {
+            heldFrameRequested = true
+            webView?.evaluateJavaScript("window.lidscapeSaverCapture?.()") { _, _ in }
         }
         if lastRenderSeen.map({ now.timeIntervalSince($0) < 0.75 }) != true {
             renderStartedAt = now
@@ -363,7 +434,13 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let shouldShow = showsThumbnail || !isLive
         if let fallbackView, (!fallbackView.isHidden && !fallbackView.fading) != shouldShow {
             saverLog.debug("fallback visible=\(shouldShow)")
-            if shouldShow { fallbackView.isHidden = false } else { fallbackView.fadeOut() }
+            if shouldShow {
+                fallbackView.isHidden = false
+            } else {
+                // A held frame matches the live picture exactly, so it can go at once.
+                if posterIsHeldFrame { fallbackView.isHidden = true } else { fallbackView.fadeOut() }
+                webView?.evaluateJavaScript("window.lidscapeSaverRelease?.()") { _, _ in }
+            }
         }
         guard animationActive, !showsThumbnail, let view = webView else { return }
         let lastSignal = lastRenderSeen ?? pageLoadStartedAt
@@ -388,6 +465,7 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         fallbackView = nil
         webView?.evaluateJavaScript("window.lidscapeSaver?.stop()") { _, _ in }
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "lidscapeFrame")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "lidscapeCapture")
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
@@ -487,7 +565,9 @@ final class LidscapeSaverView: ScreenSaverView, WKNavigationDelegate, WKScriptMe
         let bundle = Bundle(for: Self.self)
         let url = bundle.url(forResource: name, withExtension: "png")
             ?? bundle.url(forResource: "poster", withExtension: "png")
-        poster = url.flatMap { NSImage(contentsOf: $0) }
+        let held = showsThumbnail ? nil : heldFrameURL().flatMap { NSImage(contentsOf: $0) }
+        posterIsHeldFrame = held != nil
+        poster = held ?? url.flatMap { NSImage(contentsOf: $0) }
         fallbackView?.image = poster
         needsDisplay = true
     }
