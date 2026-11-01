@@ -162,9 +162,11 @@ test('a held screen saver stays still, captures its frame, and moves after relea
     await page.waitForTimeout(300)
     assert.ok(held.equals(await page.screenshot()), 'the lid must not change a held scene')
 
-    await page.evaluate(() => window.lidscapeSaverCapture())
+    await page.evaluate(() => window.lidscapeSaverCapture('request-1'))
     await page.waitForFunction(() => window.__captures.length === 1)
-    const capture = await page.evaluate(() => window.__captures[0])
+    const result = await page.evaluate(() => window.__captures[0])
+    assert.equal(result.id, 'request-1')
+    const capture = result.data
     assert.match(capture, /^data:image\/png;base64,/)
     const size = await page.evaluate(async (url) => {
       const image = new Image()
@@ -174,9 +176,17 @@ test('a held screen saver stays still, captures its frame, and moves after relea
     }, capture)
     assert.deepEqual(size, await page.evaluate(() => [window.lidscapeSaver.renderer.domElement.width, window.lidscapeSaver.renderer.domElement.height]))
 
-    await page.evaluate(() => window.lidscapeSaverRelease())
+    await page.evaluate(() => {
+      window.lidscapeSaverCapture('just-before-release')
+      window.lidscapeSaverRelease()
+    })
     await page.waitForTimeout(800)
     assert.ok(!held.equals(await page.screenshot()), 'a released scene must move')
+    const releasedFrame = await page.evaluate(() => window.lidscapeSaver.renderer.info.render.frame)
+    assert.equal(await page.evaluate(() => window.__captures.length), 1, 'release must cancel a capture that has not rendered')
+    await page.evaluate(() => window.lidscapeSaverCapture('after-release'))
+    await page.waitForFunction((frame) => window.lidscapeSaver.renderer.info.render.frame >= frame + 5, releasedFrame)
+    assert.equal(await page.evaluate(() => window.__captures.length), 1, 'a moving scene must not be cached as its first frame')
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()

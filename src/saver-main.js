@@ -101,10 +101,15 @@ let progress = 1
 // copy, so the swap shows no change. The copy is captured from the canvas, since
 // WebKit snapshots often miss WebGL.
 let held = params.get('hold') === '1'
-let captureRequested = false
-window.lidscapeSaverCapture = () => { captureRequested = true }
+let captureRequested = null
+window.lidscapeSaverCapture = (id) => {
+  if (!held || typeof id !== 'string') return false
+  captureRequested = id
+  return true
+}
 window.lidscapeSaverRelease = () => {
   if (!held) return
+  captureRequested = null
   held = false
   clock.start()
 }
@@ -152,10 +157,11 @@ function frame(now) {
   city.update(progress, 1, held ? 0 : clock.elapsedTime)
   if (!lowQuality) city.renderReflection(renderer, camera)
   composer.render()
-  if (captureRequested) {
-    captureRequested = false
+  if (captureRequested !== null) {
+    const id = captureRequested
+    captureRequested = null
     // Read the canvas in the same task as the render, before the browser clears it.
-    window.webkit?.messageHandlers?.lidscapeCapture?.postMessage(renderer.domElement.toDataURL('image/png'))
+    window.webkit?.messageHandlers?.lidscapeCapture?.postMessage({ id, data: renderer.domElement.toDataURL('image/png') })
   }
   updateLabel()
   window.lidscapeSaverLastRender = Date.now()

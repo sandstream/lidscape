@@ -197,6 +197,219 @@ view.exerciseHeldFrame()
   }
 })
 
+test('a delayed capture cannot be saved for a different view or setting', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-capture-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const marker = '        if message.name == "lidscapeCapture" {'
+    const settingsPattern = /    private func loadSettings\(\) -> SaverSettings \{[\s\S]*?\n    \}\n\n    private func loadOptions/
+    if (original.split(marker).length !== 2 || !settingsPattern.test(original)) {
+      throw new Error('The capture test seams were not found')
+    }
+    const source = original
+      .replace(marker, marker + '\n            captureDelivered += 1')
+      .replace(settingsPattern, '    private func loadSettings() -> SaverSettings { SaverSettings(city: captureTestCity, theme: "paper", variant: "") }\n\n    private func loadOptions')
+    const testSource = `${source}
+private var captureDelivered = 0
+private var captureTestCity = "stockholm"
+final class CaptureReady: NSObject, WKNavigationDelegate {
+    var ready = false
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true }
+}
+func waitFor(_ predicate: () -> Bool, seconds: TimeInterval = 10) {
+    let deadline = Date(timeIntervalSinceNow: seconds)
+    while !predicate() && Date() < deadline {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+    }
+    precondition(predicate(), "WebKit did not finish the capture test")
+}
+extension LidscapeSaverView {
+    func exerciseDelayedCapture(dataURL: String) {
+        let controller = WKUserContentController()
+        controller.add(WeakFrameHandler(receiver: self), name: "lidscapeCapture")
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        configuration.websiteDataStore = .nonPersistent()
+        let content = WKWebView(frame: bounds, configuration: configuration)
+        let ready = CaptureReady()
+        content.navigationDelegate = ready
+        content.loadHTMLString("""
+        <script>
+          window.lidscapeSaverCapture = (id) => { window.requestID = id; window.captureReady = true; return true }
+          window.flushCapture = (data) => window.webkit.messageHandlers.lidscapeCapture.postMessage(
+            typeof window.requestID === 'string' ? {id: window.requestID, data} : data)
+        </script>
+        """, baseURL: nil)
+        waitFor { ready.ready }
+        webView = content
+        pageSettings = loadSettings()
+        animationActive = true
+        let oldTarget = heldFrameURL()!
+        noteRenderedFrame(now: Date())
+        var readyChecked = false
+        var requestReady = false
+        content.evaluateJavaScript("window.captureReady === true") { value, _ in
+            requestReady = value as? Bool == true
+            readyChecked = true
+        }
+        waitFor { readyChecked }
+        precondition(requestReady, "The capture request must reach the page")
+        let argument = String(data: try! JSONSerialization.data(withJSONObject: [dataURL]), encoding: .utf8)!
+        content.evaluateJavaScript("window.webkit.messageHandlers.lidscapeCapture.postMessage({id:'wrong',data: \\(argument)[0]})") { _, _ in }
+        waitFor { captureDelivered == 1 }
+        precondition(heldFramePending != nil, "A different request must not consume the pending capture")
+        setFrameSize(NSSize(width: 800, height: 500))
+        let newTarget = heldFrameURL()!
+        precondition(oldTarget != newTarget)
+        setFrameSize(NSSize(width: 640, height: 480))
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 2 }
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: oldTarget.path) && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: oldTarget.path),
+                     "A delayed frame must not be saved after a size changes away and back")
+        precondition(!heldFrameRequested, "A new frame must be allowed while the scene is held")
+        noteRenderedFrame(now: Date())
+        setFrameSize(NSSize(width: 800, height: 500))
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 3 }
+        let sizeDeadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: newTarget.path) && Date() < sizeDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: newTarget.path),
+                     "A delayed frame must not be saved under the new size")
+        precondition(!heldFrameRequested, "The new size must be allowed to request a frame")
+        noteRenderedFrame(now: Date())
+        captureTestCity = "tallinn"
+        let changedSettingsTarget = heldFrameURL()!
+        precondition(changedSettingsTarget != newTarget)
+        updateFallback()
+        captureTestCity = "stockholm"
+        updateFallback()
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 4 }
+        let restoredSettingsDeadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: newTarget.path) && Date() < restoredSettingsDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: newTarget.path),
+                     "A delayed frame must not be saved after settings change away and back")
+        precondition(!heldFrameRequested, "The restored settings must allow a new frame")
+        noteRenderedFrame(now: Date())
+        captureTestCity = "tallinn"
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 5 }
+        let settingsDeadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: changedSettingsTarget.path) && Date() < settingsDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: changedSettingsTarget.path),
+                     "A delayed frame must not be saved under new settings")
+        precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: changedSettingsTarget))
+        refreshPoster()
+        precondition(!posterIsHeldFrame, "An old page must not show a cached frame for different settings")
+        try! FileManager.default.removeItem(at: changedSettingsTarget)
+        precondition(!heldFrameRequested, "The new settings must be allowed to request a frame")
+        noteRenderedFrame(now: Date())
+        precondition(heldFramePending == nil, "The old page must not request a capture for new settings")
+        pageSettings = loadSettings()
+        noteRenderedFrame(now: Date())
+        webView(content, didFinish: nil)
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 6 }
+        waitFor { FileManager.default.fileExists(atPath: changedSettingsTarget.path) }
+        animationActive = false
+        controller.removeScriptMessageHandler(forName: "lidscapeCapture")
+        content.navigationDelegate = nil
+        content.stopLoading()
+        webView = nil
+    }
+}
+let cache = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+LidscapeSaverView.heldFrameDirectory = cache
+let image = NSImage(size: NSSize(width: 8, height: 6), flipped: false) { rect in
+    NSColor.systemRed.setFill(); rect.fill(); return true
+}
+let png = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+let dataURL = "data:image/png;base64," + png.base64EncodedString()
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseDelayedCapture(dataURL: dataURL)
+`
+    const file = join(dir, 'capture.swift')
+    const executable = join(dir, 'capture')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [join(dir, 'cache')], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a failed capture retries only while the first frame is held', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-capture-retry-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+final class CaptureWebView: WKWebView {
+    var callbacks: [((Any?, Error?) -> Void)] = []
+    override func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        if script.contains("lidscapeSaverCapture"), let completionHandler { callbacks.append(completionHandler) }
+    }
+}
+extension LidscapeSaverView {
+    func exerciseCaptureFailure() {
+        let content = CaptureWebView(frame: bounds)
+        webView = content
+        pageSettings = loadSettings()
+        animationActive = true
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 1)
+        content.callbacks[0](nil, NSError(domain: "test", code: 1))
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 2, "A failed capture must be retried")
+        content.callbacks[1](false, nil)
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 3, "A missing capture function must be retried")
+        content.callbacks[2](nil, NSError(domain: "test", code: 2))
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 3, "Capture errors must not cause an unbounded retry loop")
+    }
+    func exercisePageSettingsMismatch() {
+        let content = CaptureWebView(frame: bounds)
+        webView = content
+        let settings = loadSettings()
+        pageSettings = SaverSettings(city: settings.city + "-old", theme: settings.theme, variant: settings.variant)
+        animationActive = true
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.isEmpty, "A page with old settings must not capture under the new settings")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseCaptureFailure()
+let oldPage = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+oldPage.exercisePageSettingsMismatch()
+`
+    const file = join(dir, 'capture-retry.swift')
+    const executable = join(dir, 'capture-retry')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('posters cover ultrawide screens and keep the live brush size', async () => {
   const source = await readFile(fileURLToPath(new URL('./generate-thumbnail.mjs', import.meta.url)), 'utf8')
   const poster = source.match(/name: `poster-city-[\s\S]*?width: (\d+), height: (\d+), scale: (\d+) \/ (\d+)/)
@@ -510,6 +723,11 @@ extension LidscapeSaverView {
         precondition(heldReleaseReloadPending, "An old navigation error must not replace the new reload")
         webView(content, didFinish: current)
         precondition(!heldReleaseReloadPending, "The current navigation must complete the reload")
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        webView(content, didFail: old, withError: NSError(domain: "test", code: 2))
+        precondition(pageRetry.delay == 1, "A late error from an older navigation must not schedule another reload")
+        stopAnimation()
         content.stopLoading()
         webView = nil
     }
