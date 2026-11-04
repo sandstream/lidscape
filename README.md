@@ -24,6 +24,46 @@ gets lower quality, and a Mac without a lid sensor or camera is told plainly.
 The lid sensor cannot be read inside the App Store sandbox without a temporary
 IOKit exception, so the app ships outside the App Store.
 
+### Screen saver
+
+The image shows the packaged screen saver with the book open:
+
+![Stockholm screen saver](docs/screensaver-city.png)
+
+The screen saver is also a separate Mac download. It does not need Lidscape.app.
+On macOS 27 or later, unzip `Lidscape-Screen-Saver_<version>_arm64.zip` and
+double-click `LidscapeScreenSaver.saver`. Confirm installation for this user in macOS.
+Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
+Use the screen saver's **Options** control to choose the city, theme, and variant.
+To remove it, delete `~/Library/Screen Savers/LidscapeScreenSaver.saver`.
+The screen saver starts its bundled sensor app while it runs. The sensor app
+reads the lid angle and sends it to the screen saver. It does not use the camera.
+
+The build captures Stockholm at two sizes: a small settings thumbnail and a
+full-screen poster. The poster appears while the animated scene starts.
+The full-screen screen saver rendered live in macOS on a real MacBook. The lid
+sensor connected there. Closing the physical lid and waking the Mac still need
+a separate check before release.
+Build the separate download from the repository root:
+
+```bash
+bun install
+bunx playwright install chromium
+sh screensaver/build-download.sh
+```
+
+For a public release, set `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`,
+`APPLE_API_ISSUER` and `APPLE_API_KEY_PATH`, then add `--notarize`.
+The ZIP file appears in `dist/` and can be attached to a GitHub release.
+
+The Mac app offers the same screen saver through its settings:
+
+On macOS 27 or later, open **Screen Saver** in the Lidscape app and select **Install**.
+Confirm installation for this user in macOS.
+Open Mac settings, choose **Screen Saver**, switch to **Custom**, and select Lidscape.
+Choose the picture with **Options** in Mac settings.
+To remove it, select **Remove** in the Lidscape app.
+
 ## Run in a browser
 
 ```bash
@@ -71,6 +111,7 @@ The lid sensor has no public API. It works on Apple Silicon MacBooks, confirmed 
 | `src/tracking.js` | MediaPipe face (iris distance gives depth) and hand pose |
 | `src/lid.js` | WebSocket client for the lid bridge |
 | `bridge/LidBridge.swift` | Reads the lid sensor over IOKit HID and serves it on localhost |
+| `screensaver/` | Builds the offline Mac screen saver module |
 
 ## Add a city, a theme or a variant
 

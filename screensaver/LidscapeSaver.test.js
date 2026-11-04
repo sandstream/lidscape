@@ -1,0 +1,1534 @@
+import test from 'node:test'
+import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createServer } from 'node:http'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+test('old map settings retain the selected city, theme and variant', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-settings-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+private let oldData = Data(#"{"city":"stockholm","theme":"miniature","variant":"christmas","view":"map"}"#.utf8)
+private let settings = try JSONDecoder().decode(SaverSettings.self, from: oldData)
+precondition(settings.city == "stockholm")
+precondition(settings.theme == "miniature")
+precondition(settings.variant == "christmas")
+private let encoded = try JSONEncoder().encode(settings)
+private let fields = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+precondition(fields["view"] == nil)
+precondition(fields["city"] as? String == "stockholm")
+precondition(fields["theme"] as? String == "miniature")
+precondition(fields["variant"] as? String == "christmas")
+`
+    const file = join(dir, 'compatibility.swift')
+    const executable = join(dir, 'compatibility')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the poster keeps the live scene framing on any screen shape', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-poster-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    // The live scene keeps its height and shows more or less at the sides.
+    // The poster must fill the height and crop the sides, never stretch.
+    const testSource = `${source}
+private let poster = NSSize(width: 3440, height: 1440)
+for screen in [NSSize(width: 1512, height: 982), NSSize(width: 1920, height: 1080),
+               NSSize(width: 3440, height: 1440), NSSize(width: 1024, height: 768)] {
+    let rect = posterRect(poster, in: NSRect(origin: .zero, size: screen))
+    precondition(abs(rect.height - screen.height) < 0.001, "The poster must fill the screen height")
+    precondition(abs(rect.width / rect.height - poster.width / poster.height) < 0.001, "The poster must keep its shape")
+    precondition(abs(rect.midX - screen.width / 2) < 0.001, "The poster must be centred")
+    precondition(rect.width >= screen.width - 0.001, "The poster must cover the screen width")
+}
+`
+    const file = join(dir, 'poster.swift')
+    const executable = join(dir, 'poster')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the poster covers a 32:9 screen when drawn', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-wide-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+let posterImage = NSImage(size: NSSize(width: 210, height: 90), flipped: false) { rect in
+    NSColor.red.setFill(); rect.fill(); return true
+}
+let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 320, pixelsHigh: 90,
+    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+let context = NSGraphicsContext(bitmapImageRep: bitmap)!
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = context
+NSColor.black.setFill()
+NSRect(x: 0, y: 0, width: 320, height: 90).fill()
+let view = PosterView(frame: NSRect(x: 0, y: 0, width: 320, height: 90))
+view.image = posterImage
+view.draw(view.bounds)
+context.flushGraphics()
+NSGraphicsContext.restoreGraphicsState()
+for x in [0, 319] {
+    let color = bitmap.colorAt(x: x, y: 45)!.usingColorSpace(.deviceRGB)!
+    precondition(color.redComponent > 0.9, "The poster must cover both sides of a 32:9 display")
+}
+`
+    const file = join(dir, 'wide.swift')
+    const executable = join(dir, 'wide')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the poster fades into the live scene and returns at once', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-fade-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    // The live brush pattern never lines up with the poster's, so a cut shows as a jump.
+    const testSource = `${source}
+func runLoop(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+let poster = PosterView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+poster.wantsLayer = true
+poster.fadeOut()
+precondition(!poster.isHidden, "The poster must stay while it fades")
+runLoop(0.8)
+precondition(poster.isHidden && poster.alphaValue == 1, "The poster must be hidden after the fade")
+poster.isHidden = false
+poster.fadeOut()
+runLoop(0.1)
+poster.isHidden = false
+runLoop(0.8)
+precondition(!poster.isHidden && poster.alphaValue == 1, "A poster shown again must cancel the fade")
+`
+    const file = join(dir, 'fade.swift')
+    const executable = join(dir, 'fade')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the screen saver saves its first live frame and shows it at the next start', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-held-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+let cache = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+LidscapeSaverView.heldFrameDirectory = cache
+let image = NSImage(size: NSSize(width: 8, height: 6), flipped: false) { rect in
+    NSColor.systemRed.setFill(); rect.fill(); return true
+}
+let png = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+let dataURL = "data:image/png;base64," + png.base64EncodedString()
+extension LidscapeSaverView {
+    func exerciseHeldFrame() {
+        let target = heldFrameURL()!
+        precondition(!LidscapeSaverView.saveHeldFrame("data:text/html;base64,PGI+", to: target), "Only PNG data may be saved")
+        precondition(!LidscapeSaverView.saveHeldFrame("data:image/png;base64,bm90IGEgcG5n", to: target), "Broken PNG data must be rejected")
+        precondition(!FileManager.default.fileExists(atPath: target.path))
+        precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: target), "A PNG frame must be saved")
+        refreshPoster()
+        precondition(posterIsHeldFrame && poster?.size == NSSize(width: 8, height: 6), "The saved frame must be the poster")
+        let fallback = PosterView(frame: bounds)
+        fallback.image = poster
+        fallbackView = fallback
+        animationActive = true
+        setFrameSize(NSSize(width: 800, height: 500))
+        precondition(heldFrameURL() != target, "Another screen size needs its own frame")
+        precondition(!posterIsHeldFrame, "Resizing must stop showing a frame for the old size")
+        precondition(fallback.image === poster, "The visible fallback must use the current poster")
+        precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: heldFrameURL()!))
+        setFrameSize(NSSize(width: 200, height: 100))
+        precondition(!posterIsHeldFrame, "A thumbnail must not show the cached frame")
+        setFrameSize(NSSize(width: 800, height: 500))
+        precondition(posterIsHeldFrame, "Growing to a full view must load the frame for that size")
+        precondition(fallback.image === poster, "The visible fallback must use the frame for the new size")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseHeldFrame()
+`
+    const file = join(dir, 'held.swift')
+    const executable = join(dir, 'held')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [join(dir, 'cache')], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a delayed capture cannot be saved for a different view or setting', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-capture-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const marker = '        if message.name == "lidscapeCapture" {'
+    const settingsPattern = /    private func loadSettings\(\) -> SaverSettings \{[\s\S]*?\n    \}\n\n    private func loadOptions/
+    if (original.split(marker).length !== 2 || !settingsPattern.test(original)) {
+      throw new Error('The capture test seams were not found')
+    }
+    const source = original
+      .replace(marker, marker + '\n            captureDelivered += 1')
+      .replace(settingsPattern, '    private func loadSettings() -> SaverSettings { SaverSettings(city: captureTestCity, theme: "paper", variant: "") }\n\n    private func loadOptions')
+    const testSource = `${source}
+private var captureDelivered = 0
+private var captureTestCity = "stockholm"
+final class CaptureReady: NSObject, WKNavigationDelegate {
+    var ready = false
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true }
+}
+func waitFor(_ predicate: () -> Bool, seconds: TimeInterval = 10) {
+    let deadline = Date(timeIntervalSinceNow: seconds)
+    while !predicate() && Date() < deadline {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+    }
+    precondition(predicate(), "WebKit did not finish the capture test")
+}
+extension LidscapeSaverView {
+    func exerciseDelayedCapture(dataURL: String) {
+        let controller = WKUserContentController()
+        controller.add(WeakFrameHandler(receiver: self), name: "lidscapeCapture")
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        configuration.websiteDataStore = .nonPersistent()
+        let content = WKWebView(frame: bounds, configuration: configuration)
+        let ready = CaptureReady()
+        content.navigationDelegate = ready
+        content.loadHTMLString("""
+        <script>
+          window.lidscapeSaverCapture = (id) => { window.requestID = id; window.captureReady = true; return true }
+          window.flushCapture = (data) => window.webkit.messageHandlers.lidscapeCapture.postMessage(
+            typeof window.requestID === 'string' ? {id: window.requestID, data} : data)
+        </script>
+        """, baseURL: nil)
+        waitFor { ready.ready }
+        webView = content
+        pageSettings = loadSettings()
+        animationActive = true
+        let oldTarget = heldFrameURL()!
+        noteRenderedFrame(now: Date())
+        var readyChecked = false
+        var requestReady = false
+        content.evaluateJavaScript("window.captureReady === true") { value, _ in
+            requestReady = value as? Bool == true
+            readyChecked = true
+        }
+        waitFor { readyChecked }
+        precondition(requestReady, "The capture request must reach the page")
+        let argument = String(data: try! JSONSerialization.data(withJSONObject: [dataURL]), encoding: .utf8)!
+        content.evaluateJavaScript("window.webkit.messageHandlers.lidscapeCapture.postMessage({id:'wrong',data: \\(argument)[0]})") { _, _ in }
+        waitFor { captureDelivered == 1 }
+        precondition(heldFramePending != nil, "A different request must not consume the pending capture")
+        setFrameSize(NSSize(width: 800, height: 500))
+        let newTarget = heldFrameURL()!
+        precondition(oldTarget != newTarget)
+        setFrameSize(NSSize(width: 640, height: 480))
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 2 }
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: oldTarget.path) && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: oldTarget.path),
+                     "A delayed frame must not be saved after a size changes away and back")
+        precondition(!heldFrameRequested, "A new frame must be allowed while the scene is held")
+        noteRenderedFrame(now: Date())
+        setFrameSize(NSSize(width: 800, height: 500))
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 3 }
+        let sizeDeadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: newTarget.path) && Date() < sizeDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: newTarget.path),
+                     "A delayed frame must not be saved under the new size")
+        precondition(!heldFrameRequested, "The new size must be allowed to request a frame")
+        noteRenderedFrame(now: Date())
+        captureTestCity = "tallinn"
+        let changedSettingsTarget = heldFrameURL()!
+        precondition(changedSettingsTarget != newTarget)
+        updateFallback()
+        captureTestCity = "stockholm"
+        updateFallback()
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 4 }
+        let restoredSettingsDeadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: newTarget.path) && Date() < restoredSettingsDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: newTarget.path),
+                     "A delayed frame must not be saved after settings change away and back")
+        precondition(!heldFrameRequested, "The restored settings must allow a new frame")
+        noteRenderedFrame(now: Date())
+        captureTestCity = "tallinn"
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 5 }
+        let settingsDeadline = Date(timeIntervalSinceNow: 2)
+        while !FileManager.default.fileExists(atPath: changedSettingsTarget.path) && Date() < settingsDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        precondition(!FileManager.default.fileExists(atPath: changedSettingsTarget.path),
+                     "A delayed frame must not be saved under new settings")
+        precondition(LidscapeSaverView.saveHeldFrame(dataURL, to: changedSettingsTarget))
+        refreshPoster()
+        precondition(!posterIsHeldFrame, "An old page must not show a cached frame for different settings")
+        try! FileManager.default.removeItem(at: changedSettingsTarget)
+        precondition(!heldFrameRequested, "The new settings must be allowed to request a frame")
+        noteRenderedFrame(now: Date())
+        precondition(heldFramePending == nil, "The old page must not request a capture for new settings")
+        pageSettings = loadSettings()
+        noteRenderedFrame(now: Date())
+        webView(content, didFinish: nil)
+        content.evaluateJavaScript("window.flushCapture.apply(null, \\(argument))") { _, _ in }
+        waitFor { captureDelivered == 6 }
+        waitFor { FileManager.default.fileExists(atPath: changedSettingsTarget.path) }
+        animationActive = false
+        controller.removeScriptMessageHandler(forName: "lidscapeCapture")
+        content.navigationDelegate = nil
+        content.stopLoading()
+        webView = nil
+    }
+}
+let cache = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+LidscapeSaverView.heldFrameDirectory = cache
+let image = NSImage(size: NSSize(width: 8, height: 6), flipped: false) { rect in
+    NSColor.systemRed.setFill(); rect.fill(); return true
+}
+let png = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+let dataURL = "data:image/png;base64," + png.base64EncodedString()
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseDelayedCapture(dataURL: dataURL)
+`
+    const file = join(dir, 'capture.swift')
+    const executable = join(dir, 'capture')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [join(dir, 'cache')], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a failed capture retries only while the first frame is held', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-capture-retry-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+final class CaptureWebView: WKWebView {
+    var callbacks: [((Any?, Error?) -> Void)] = []
+    override func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        if script.contains("lidscapeSaverCapture"), let completionHandler { callbacks.append(completionHandler) }
+    }
+}
+extension LidscapeSaverView {
+    func exerciseCaptureFailure() {
+        let content = CaptureWebView(frame: bounds)
+        webView = content
+        pageSettings = loadSettings()
+        animationActive = true
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 1)
+        content.callbacks[0](nil, NSError(domain: "test", code: 1))
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 2, "A failed capture must be retried")
+        content.callbacks[1](false, nil)
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 3, "A missing capture function must be retried")
+        content.callbacks[2](nil, NSError(domain: "test", code: 2))
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.count == 3, "Capture errors must not cause an unbounded retry loop")
+    }
+    func exercisePageSettingsMismatch() {
+        let content = CaptureWebView(frame: bounds)
+        webView = content
+        let settings = loadSettings()
+        pageSettings = SaverSettings(city: settings.city + "-old", theme: settings.theme, variant: settings.variant)
+        animationActive = true
+        noteRenderedFrame(now: Date())
+        precondition(content.callbacks.isEmpty, "A page with old settings must not capture under the new settings")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseCaptureFailure()
+let oldPage = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+oldPage.exercisePageSettingsMismatch()
+`
+    const file = join(dir, 'capture-retry.swift')
+    const executable = join(dir, 'capture-retry')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('posters cover ultrawide screens and keep the live brush size', async () => {
+  const source = await readFile(fileURLToPath(new URL('./generate-thumbnail.mjs', import.meta.url)), 'utf8')
+  const poster = source.match(/name: `poster-city-[\s\S]*?width: (\d+), height: (\d+), scale: (\d+) \/ (\d+)/)
+  if (!poster) throw new Error('The poster size was not found')
+  const [width, height] = [Number(poster[1]), Number(poster[2])]
+  const scale = Number(poster[3]) / Number(poster[4])
+  if (width / height < 21 / 9) throw new Error('Posters must be at least 21:9')
+  // Brush strokes and glow are sized in screen points. A poster drawn at another
+  // point height shows finer strokes than the live scene that replaces it.
+  if (height < 900 || height > 1100) throw new Error('Posters must use a laptop screen height in points')
+  if (height * scale < 1400) throw new Error('Posters must be sharp on a Retina screen')
+})
+
+test('a failed held-frame release keeps the poster and retries', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-release-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const source = original
+      .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeAfter(delay: retry.delay)')
+      .replace('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)', '            let navigation = fakeLoadFileURL(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      throw new Error('The retry test seams were not found')
+    }
+    const testSource = `${source}
+private var scheduledReleaseReloads: [() -> Void] = []
+private var releaseReloads = 0
+private func fakeAfter(delay: TimeInterval, perform: @escaping () -> Void) {
+    scheduledReleaseReloads.append(perform)
+}
+private func fakeLoadFileURL(view: WKWebView, page: URL, resources: URL) -> WKNavigation? {
+    releaseReloads += 1
+    return nil
+}
+final class ReleaseWebView: WKWebView {
+    var callbacks: [((Any?, Error?) -> Void)] = []
+    override func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        if script.contains("lidscapeSaverRelease"), let completionHandler { callbacks.append(completionHandler) }
+    }
+}
+extension LidscapeSaverView {
+    func exerciseFailedRelease() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        precondition(content.callbacks.count == 1, "The live page must receive a release request")
+        precondition(!fallback.isHidden, "Keep the poster until release succeeds")
+        content.callbacks[0](nil, NSError(domain: "test", code: 1))
+        updateFallback()
+        precondition(content.callbacks.count == 2, "A failed release must be retried")
+        precondition(!fallback.isHidden, "A failed release must not expose a frozen scene")
+        content.callbacks[1](false, nil)
+        updateFallback()
+        precondition(content.callbacks.count == 3, "A missing release function must be retried")
+        precondition(!fallback.isHidden, "A missing function must not expose a frozen scene")
+        content.callbacks[2](true, nil)
+        precondition(fallback.isHidden, "A confirmed release must show the live scene")
+    }
+    func exerciseTimeout() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        let initial = Date()
+        lastRenderSeen = initial
+        renderStartedAt = initial.addingTimeInterval(-2)
+        updateFallback(now: initial, uptime: 100)
+        updateFallback(now: initial, uptime: 100)
+        precondition(content.callbacks.count == 1, "Do not queue release calls while one is pending")
+        let changedClock = initial.addingTimeInterval(-3600)
+        lastRenderSeen = changedClock
+        renderStartedAt = changedClock.addingTimeInterval(-2)
+        updateFallback(now: changedClock, uptime: 103)
+        precondition(content.callbacks.count == 2, "A release that never answers must time out")
+        content.callbacks[0](true, nil)
+        precondition(!fallback.isHidden, "A late answer after a timeout must be ignored")
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        content.callbacks[1](true, nil)
+        precondition(fallback.isHidden, "The current attempt must release the poster")
+    }
+    func exerciseLateStop() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        precondition(content.callbacks.count == 1)
+        stopAnimation()
+        content.callbacks[0](true, nil)
+        precondition(!animationActive && webView == nil && !fallback.isHidden,
+                     "A stopped view must ignore a late release answer")
+    }
+    func exerciseLateNavigation() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        webView(content, didFinish: nil)
+        updateFallback()
+        precondition(content.callbacks.count == 2)
+        content.callbacks[0](true, nil)
+        precondition(!fallback.isHidden, "An answer from the previous page must be ignored")
+        content.callbacks[1](true, nil)
+        precondition(fallback.isHidden)
+    }
+    func exerciseFailedReload() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        for index in 0..<3 {
+            updateFallback()
+            precondition(content.callbacks.count == index + 1)
+            content.callbacks[index](nil, NSError(domain: "test", code: 1))
+        }
+        updateFallback()
+        precondition(heldReleaseReloadPending && scheduledReleaseReloads.count == 1,
+                     "Repeated release failures must schedule one reload")
+        precondition(!fallback.isHidden)
+        webView(content, didFinish: nil)
+        precondition(heldReleaseReloadPending, "A late finish from the old page must not cancel the reload")
+        noteRenderedFrame(now: Date())
+        precondition(lastRenderSeen == nil, "Old frame signals must not cancel a pending reload")
+        content.callbacks[0](true, nil)
+        precondition(!fallback.isHidden, "An old release answer must not hide the fallback")
+        scheduledReleaseReloads.removeFirst()()
+        precondition(releaseReloads == 1, "The scheduled reload must run")
+        webView(content, didFinish: nil)
+        precondition(!heldReleaseReloadPending, "The new page must accept frame signals")
+    }
+    func exerciseNoAnswersAcrossReload() {
+        let content = ReleaseWebView(frame: bounds)
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        let now = Date()
+        lastRenderSeen = now
+        renderStartedAt = now.addingTimeInterval(-2)
+        for uptime in [100.0, 103, 106, 109] { updateFallback(now: now, uptime: uptime) }
+        precondition(content.callbacks.count == 3 && heldReleaseOutstanding.count == 3,
+                     "A page must have at most three unanswered calls")
+        precondition(heldReleaseReloadPending && scheduledReleaseReloads.count == 1)
+        scheduledReleaseReloads.removeFirst()()
+        webView(content, didFinish: nil)
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        for _ in 0..<5 { updateFallback() }
+        precondition(content.callbacks.count == 3 && !fallback.isHidden,
+                     "A new page must not queue calls while old calls are unanswered")
+        precondition(heldReleaseBlockedLogged, "The blocked state must be logged")
+        content.callbacks[0](nil, NSError(domain: "test", code: 1))
+        updateFallback()
+        precondition(content.callbacks.count == 4 && !fallback.isHidden,
+                     "A late answer may free one place without releasing the poster")
+        precondition(!heldReleaseBlockedLogged, "A freed place must clear the blocked state")
+        content.callbacks[3](true, nil)
+        precondition(fallback.isHidden, "The new page must still be able to recover")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseFailedRelease()
+let timeoutView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+timeoutView.exerciseTimeout()
+let stoppedView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+stoppedView.exerciseLateStop()
+let navigatedView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+navigatedView.exerciseLateNavigation()
+let reloadView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+reloadView.exerciseFailedReload()
+let unansweredView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+unansweredView.exerciseNoAnswersAcrossReload()
+`
+    const file = join(dir, 'release.swift')
+    const executable = join(dir, 'release')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the live-frame clock recovers after the system clock moves backward', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-clock-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseClockJump() {
+        let first = Date()
+        lastRenderSeen = first
+        renderStartedAt = first.addingTimeInterval(-5)
+        let backward = first.addingTimeInterval(-3600)
+        noteRenderedFrame(now: backward)
+        precondition(renderStartedAt == backward, "A backward clock jump must not keep the page in a frozen state")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseClockJump()
+`
+    const file = join(dir, 'clock.swift')
+    const executable = join(dir, 'clock')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a real WebKit page must confirm release before the poster hides', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-real-release-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+final class ReadyDelegate: NSObject, WKNavigationDelegate {
+    var ready = false
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true }
+}
+func waitUntil(_ predicate: () -> Bool) {
+    let deadline = Date(timeIntervalSinceNow: 10)
+    while !predicate() && Date() < deadline {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+    }
+    precondition(predicate(), "WebKit did not complete the test in time")
+}
+extension LidscapeSaverView {
+    func exerciseRealRelease(functionExists: Bool) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let content = WKWebView(frame: bounds, configuration: configuration)
+        let ready = ReadyDelegate()
+        content.navigationDelegate = ready
+        let script = functionExists ? "window.lidscapeSaverRelease = () => { window.released = true }" : ""
+        content.loadHTMLString("<html><script>\\(script)</script></html>", baseURL: nil)
+        waitUntil { ready.ready }
+        let fallback = PosterView(frame: bounds)
+        webView = content
+        fallbackView = fallback
+        animationActive = true
+        posterIsHeldFrame = true
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback()
+        if functionExists {
+            waitUntil { fallback.isHidden }
+            precondition(heldReleaseConfirmed, "The page must confirm the call")
+        } else {
+            waitUntil { heldReleaseFailures == 1 }
+            precondition(!fallback.isHidden, "A missing function must leave the poster visible")
+        }
+        animationActive = false
+        resetHeldRelease()
+        content.navigationDelegate = nil
+        content.stopLoading()
+        webView = nil
+        fallbackView = nil
+    }
+    func exerciseRealNavigationIdentity() {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let content = WKWebView(frame: bounds, configuration: configuration)
+        webView = content
+        let old = content.loadHTMLString("<html>old</html>", baseURL: nil)!
+        let current = content.loadHTMLString("<html>new</html>", baseURL: nil)!
+        precondition(old !== current, "The test needs two distinct navigation objects")
+        heldReleaseReloadPending = true
+        heldReleaseReloadStarted = true
+        heldReleaseNavigation = current
+        webView(content, didFinish: old)
+        precondition(heldReleaseReloadPending, "An old navigation must not complete the new reload")
+        webView(content, didFail: old, withError: NSError(domain: "test", code: 1))
+        precondition(heldReleaseReloadPending, "An old navigation error must not replace the new reload")
+        webView(content, didFinish: current)
+        precondition(!heldReleaseReloadPending, "The current navigation must complete the reload")
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        webView(content, didFail: old, withError: NSError(domain: "test", code: 2))
+        precondition(pageRetry.delay == 1, "A late error from an older navigation must not schedule another reload")
+        stopAnimation()
+        content.stopLoading()
+        webView = nil
+    }
+}
+let present = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+present.exerciseRealRelease(functionExists: true)
+let missing = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+missing.exerciseRealRelease(functionExists: false)
+let navigation = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+navigation.exerciseRealNavigationIdentity()
+`
+    const file = join(dir, 'real-release.swift')
+    const executable = join(dir, 'real-release')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+
+test('the sensor helper can be launched again after a failed startup', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-sensor-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const source = original.replace('NSWorkspace.shared.openApplication(at: helper, configuration: configuration)',
+      'fakeOpenApplication(at: helper, configuration: configuration)')
+    if (source === original) throw new Error('The sensor launch seam was not found')
+    const testSource = `${source}
+private var fakeLaunchCount = 0
+private var fakeLaunchFails = false
+private func fakeOpenApplication(at url: URL, configuration: NSWorkspace.OpenConfiguration,
+                                 completionHandler: @escaping (NSRunningApplication?, Error?) -> Void) {
+    fakeLaunchCount += 1
+    let error: Error? = fakeLaunchFails ? NSError(domain: "SensorLaunchTest", code: 1) : nil
+    completionHandler(nil, error)
+}
+extension LidscapeSaverView {
+    func exerciseFailedSensorStartup() {
+        sensorHelperURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let first = Date(timeIntervalSinceReferenceDate: 100)
+        requestSensorLaunch(now: first)
+        precondition(fakeLaunchCount == 1, "The first launch should start the helper")
+        requestSensorLaunch(now: first.addingTimeInterval(1))
+        precondition(fakeLaunchCount == 1, "Repeated failures must not cause a launch storm")
+        requestSensorLaunch(now: first.addingTimeInterval(5))
+        precondition(fakeLaunchCount == 2, "A helper that did not send an angle must be retried")
+        handleSensorMessage(#"{"angle":120}"#)
+        handleSensorMessage(#"{"angle":121}"#)
+        precondition(fakeLaunchCount == 2, "Sensor messages must not start the helper again")
+        requestSensorLaunch(now: first.addingTimeInterval(5.1))
+        precondition(fakeLaunchCount == 3, "A new disconnect can launch after successful sensor data")
+        sensorLaunchRequestedAt = nil
+        fakeLaunchFails = true
+        requestSensorLaunch(now: first.addingTimeInterval(10))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        requestSensorLaunch(now: first.addingTimeInterval(11))
+        precondition(fakeLaunchCount == 4, "Failed starts must also respect the retry limit")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseFailedSensorStartup()
+`
+    const file = join(dir, 'sensor.swift')
+    const executable = join(dir, 'sensor')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('sensor loss clears the last known angle', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-loss-test-'))
+  try {
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseSensorLoss() {
+        handleSensorMessage(#"{"angle":15}"#)
+        precondition(lastLidAngle == 15)
+        handleSensorMessage(#"{"sensor":false}"#)
+        precondition(lastLidAngle == nil, "A missing sensor must clear the last angle")
+        handleSensorMessage(#"{"angle":120}"#)
+        precondition(lastLidAngle == 120)
+        clearLidAngle()
+        precondition(lastLidAngle == nil, "A disconnected sensor must clear the last angle")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseSensorLoss()
+`
+    const file = join(dir, 'loss.swift')
+    const executable = join(dir, 'loss')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('WebKit failures retry with backoff and stop after the view closes', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-webkit-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const source = original
+      .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeAfter(delay: retry.delay)')
+      .replace('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)', '            let navigation = fakeLoadFileURL(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      throw new Error('The retry test seams were not found')
+    }
+    const testSource = `${source}
+private var scheduled: [(TimeInterval, () -> Void)] = []
+private var reloads = 0
+private func fakeAfter(delay: TimeInterval, perform: @escaping () -> Void) {
+    scheduled.append((delay, perform))
+}
+private func fakeLoadFileURL(view: WKWebView, page: URL, resources: URL) -> WKNavigation? {
+    reloads += 1
+    return nil
+}
+extension LidscapeSaverView {
+    func exercisePageFailure() {
+        let content = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        webView = content
+        fallbackView = PosterView()
+        fallbackView?.isHidden = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        lastRenderSeen = Date()
+        renderStartedAt = Date().addingTimeInterval(-10)
+        let error = NSError(domain: "WebKitTest", code: 1)
+        webViewWebContentProcessDidTerminate(content)
+        precondition(fallbackView?.isHidden == false, "The fallback must appear immediately")
+        webView(content, didFailProvisionalNavigation: nil, withError: error)
+        precondition(scheduled.map(\\.0) == [1], "Duplicate failures must share one pending retry")
+        for expected in [1.0, 2, 4, 8, 16, 30, 30] {
+            precondition(scheduled.count == 1 && scheduled[0].0 == expected)
+            scheduled.removeFirst().1()
+            webView(content, didFail: nil, withError: error)
+        }
+        precondition(reloads == 7)
+        precondition(scheduled.count == 1 && scheduled[0].0 == 30)
+        webView(content, didFinish: nil)
+        scheduled.removeFirst().1()
+        precondition(reloads == 7, "A successful navigation must cancel a pending retry")
+        pageRetry.markHealthy()
+        webViewWebContentProcessDidTerminate(content)
+        precondition(scheduled.count == 1 && scheduled[0].0 == 1, "A healthy page resets the retry delay")
+        stopAnimation()
+        scheduled.removeFirst().1()
+        precondition(reloads == 7, "A stopped view must not reload")
+        precondition(pageRetry.delay == 1, "Stopping must reset the retry delay")
+    }
+    func exerciseStallAfterClockJump() {
+        let content = WKWebView(frame: bounds)
+        webView = content
+        fallbackView = PosterView(frame: bounds)
+        animationActive = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        lastRenderSeen = Date()
+        renderStartedAt = Date(timeIntervalSinceNow: -2)
+        updateFallback(now: Date(timeIntervalSinceNow: -3600), uptime: 100)
+        precondition(scheduled.count == 1, "A clock jump must not prevent a stalled page from reloading")
+        stopAnimation()
+        scheduled.removeFirst().1()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exercisePageFailure()
+let clockView = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+clockView.exerciseStallAfterClockJump()
+`
+    const file = join(dir, 'webkit.swift')
+    const executable = join(dir, 'webkit')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a small screen saver starts one live view when it grows', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-resize-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const resourceLookup = `        let bundle = Bundle(for: Self.self)
+        guard let resources = bundle.resourceURL,
+              let page = bundle.url(forResource: "index", withExtension: "html", subdirectory: "web") else {
+            NSLog("Lidscape saver: bundled page is missing")
+            return
+        }`
+    if (!original.includes(resourceLookup)) throw new Error('The resource lookup seam was not found')
+    const source = original.replace(resourceLookup, `        let resources = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let page = resources.appendingPathComponent("page.html")`)
+      .replaceAll('view.loadFileURL(page, allowingReadAccessTo: resources)', 'fakeResizeLoad(view: view, page: page, resources: resources)')
+      .replace('if !isPreview { startSensor(resources: resources) }', 'if !isPreview { fakeResizeSensorStart(resources: resources) }')
+    const testSource = `${source}
+private var resizeLoads = 0
+private var resizeSensorStarts = 0
+private func fakeResizeLoad(view: WKWebView, page: URL, resources: URL) -> WKNavigation? { resizeLoads += 1; return nil }
+private func fakeResizeSensorStart(resources: URL) { resizeSensorStarts += 1 }
+extension LidscapeSaverView {
+    func exerciseResize() {
+        startAnimation()
+        precondition(fallbackView != nil && webView == nil, "A small view should start with the poster")
+        setFrameSize(NSSize(width: 800, height: 600))
+        precondition(webView != nil, "A growing view must start WebKit")
+        let first = webView
+        precondition(resizeLoads == 1 && resizeSensorStarts == 1)
+        setFrameSize(NSSize(width: 900, height: 700))
+        setFrameSize(NSSize(width: 200, height: 150))
+        setFrameSize(NSSize(width: 1000, height: 800))
+        startAnimation()
+        precondition(webView === first, "Resizing must reuse the same WebKit view")
+        precondition(resizeLoads == 1 && resizeSensorStarts == 1, "Resizing must not start duplicates")
+        stopAnimation()
+        setFrameSize(NSSize(width: 1200, height: 900))
+        precondition(webView == nil && resizeLoads == 1, "A stopped view must not restart")
+    }
+    func exercisePreviewResize() {
+        startAnimation()
+        setFrameSize(NSSize(width: 800, height: 600))
+        precondition(webView == nil && resizeLoads == 1, "A preview must remain on the poster")
+        stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 240, height: 156), isPreview: false)!
+view.exerciseResize()
+let preview = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 240, height: 156), isPreview: true)!
+preview.exercisePreviewResize()
+`
+    const file = join(dir, 'resize.swift')
+    const executable = join(dir, 'resize')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a stalled live screen saver retries without a reload storm', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-stall-test-'))
+  try {
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const source = original
+      .replace('DispatchQueue.main.asyncAfter(deadline: .now() + retry.delay)', 'fakeStallAfter(delay: retry.delay)')
+      .replace('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)', '            let navigation = fakeStallLoad(view: view, page: page, resources: resources)')
+    if (source === original || source.includes('            let navigation = view.loadFileURL(page, allowingReadAccessTo: resources)')) {
+      throw new Error('The retry test seams were not found')
+    }
+    const testSource = `${source}
+private var scheduledStall: [(TimeInterval, () -> Void)] = []
+private var stallReloads = 0
+private func fakeStallAfter(delay: TimeInterval, perform: @escaping () -> Void) {
+    scheduledStall.append((delay, perform))
+}
+private func fakeStallLoad(view: WKWebView, page: URL, resources: URL) -> WKNavigation? { stallReloads += 1; return nil }
+extension LidscapeSaverView {
+    func exerciseStalledFrames() {
+        let content = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        webView = content
+        fallbackView = PosterView()
+        fallbackView?.isHidden = true
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        animationActive = true
+        lastRenderSeen = Date().addingTimeInterval(-10)
+        renderStartedAt = Date().addingTimeInterval(-20)
+        updateFallback()
+        precondition(fallbackView?.isHidden == false, "A stalled view must show its poster")
+        precondition(scheduledStall.count == 1 && scheduledStall[0].0 == 1,
+                     "A stalled live page must schedule one reload")
+        for _ in 0..<10 { updateFallback() }
+        precondition(scheduledStall.count == 1, "Repeated timer ticks must not schedule duplicate reloads")
+        noteRenderedFrame(now: Date())
+        scheduledStall.removeFirst().1()
+        precondition(stallReloads == 0, "A resumed frame must cancel the pending reload")
+        lastRenderSeen = Date().addingTimeInterval(-10)
+        updateFallback()
+        precondition(scheduledStall.count == 1 && scheduledStall[0].0 == 2, "The next failure must use backoff")
+        scheduledStall.removeFirst().1()
+        precondition(stallReloads == 1, "The stalled page must reload")
+        updateFallback()
+        precondition(scheduledStall.isEmpty, "A new page needs time to render its first frame")
+        pageLoadStartedAt = Date().addingTimeInterval(-16)
+        updateFallback()
+        precondition(scheduledStall.count == 1 && scheduledStall[0].0 == 4,
+                     "A page with no first frame must retry with backoff")
+        stopAnimation()
+        scheduledStall.removeFirst().1()
+        precondition(stallReloads == 1, "Stopping must cancel the scheduled reload")
+    }
+    func exerciseStalledPreview() {
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        fallbackView = PosterView()
+        pageURL = URL(fileURLWithPath: "/tmp/page.html")
+        resourcesURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        animationActive = true
+        lastRenderSeen = Date().addingTimeInterval(-10)
+        updateFallback()
+        precondition(scheduledStall.isEmpty, "A preview must not schedule a reload")
+        stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseStalledFrames()
+let preview = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: true)!
+preview.exerciseStalledPreview()
+`
+    const file = join(dir, 'stall.swift')
+    const executable = join(dir, 'stall')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    execFileSync(executable, [], { stdio: 'pipe' })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+
+test('stopping the screen saver closes its sensor connection', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 60000,
+}, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-disconnect-test-'))
+  const server = createServer()
+  let connection
+  let connected = false
+  let disconnected = false
+  let peerEnded = false
+  let receivedAngle = false
+  let closeBeforeStop = false
+  let closeFrameSeen = false
+  let stopRequested = false
+  let closeWhileRunning = false
+  let mainLoopReady = false
+  let child
+  let stage = 'starting server'
+  let output = ''
+  let errorOutput = ''
+  const finishWhenClosed = () => {
+    if (disconnected && mainLoopReady && child?.exitCode === null) child.stdin.end('D')
+  }
+  const stopChild = () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  const onAbort = () => {
+    t.diagnostic(`Sensor teardown timed out at ${stage}: connected=${connected}, angle=${receivedAngle}, closeFrame=${closeFrameSeen}, peerEnded=${peerEnded}, disconnected=${disconnected}, mainLoopReady=${mainLoopReady}, output=${JSON.stringify(output)}, stderr=${JSON.stringify(errorOutput)}`)
+    stopChild()
+  }
+  t.signal.addEventListener('abort', onAbort, { once: true })
+  server.on('upgrade', (request, socket) => {
+    connected = true
+    stage = 'WebSocket connected'
+    connection = socket
+    socket.on('error', () => {})
+    socket.on('end', () => {
+      peerEnded = true
+      if (!stopRequested) closeBeforeStop = true
+      if (!closeFrameSeen) socket.end()
+    })
+    socket.on('close', () => {
+      disconnected = true
+      stage = 'WebSocket closed'
+      closeWhileRunning = child?.exitCode === null
+      if (closeWhileRunning) finishWhenClosed()
+    })
+    let buffered = Buffer.alloc(0)
+    socket.on('data', chunk => {
+      buffered = Buffer.concat([buffered, chunk])
+      while (buffered.length >= 2) {
+        const opcode = buffered[0] & 0x0f
+        const masked = (buffered[1] & 0x80) !== 0
+        let length = buffered[1] & 0x7f
+        let headerLength = 2
+        if (length === 126) {
+          if (buffered.length < 4) return
+          length = buffered.readUInt16BE(2)
+          headerLength = 4
+        } else if (length === 127) {
+          socket.destroy(new Error('Unexpected large WebSocket frame'))
+          return
+        }
+        const maskLength = masked ? 4 : 0
+        const frameLength = headerLength + maskLength + length
+        if (buffered.length < frameLength) return
+        const payload = Buffer.from(buffered.subarray(headerLength + maskLength, frameLength))
+        if (masked) {
+          for (let i = 0; i < payload.length; i++) payload[i] ^= buffered[headerLength + (i % 4)]
+        }
+        buffered = buffered.subarray(frameLength)
+        if (opcode === 8) {
+          closeFrameSeen = true
+          stage = 'WebSocket close frame received'
+          if (!stopRequested) closeBeforeStop = true
+          socket.end(Buffer.concat([Buffer.from([0x88, payload.length]), payload]))
+          return
+        }
+        if (opcode === 9) socket.write(Buffer.concat([Buffer.from([0x8a, payload.length]), payload]))
+      }
+    })
+    const key = request.headers['sec-websocket-key']
+    const accept = createHash('sha1')
+      .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    const message = Buffer.from('{"angle":120}')
+    socket.write(Buffer.concat([Buffer.from([0x81, message.length]), message]))
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const source = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    const testSource = `${source}
+private final class SensorTestInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Data?
+    func waitForByte() -> Data {
+        lock.lock(); value = nil; lock.unlock()
+        DispatchQueue.global().async { [self] in
+            let data = FileHandle.standardInput.readData(ofLength: 1)
+            lock.lock(); value = data; lock.unlock()
+        }
+        while true {
+            lock.lock(); let result = value; lock.unlock()
+            if let result { return result }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
+}
+extension LidscapeSaverView {
+    func exerciseSensorDisconnect(port: Int) {
+        sensorActive = true
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.webSocketTask(with: URL(string: "ws://127.0.0.1:\\(port)")!)
+        sensorSession = session
+        sensorTask = task
+        task.resume()
+        receiveSensor(task)
+        let deadline = Date().addingTimeInterval(5)
+        while lastLidAngle != 120 && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        precondition(lastLidAngle == 120, "The server must send a real sensor message")
+        FileHandle.standardOutput.write(Data("angle-received\\n".utf8))
+        let input = SensorTestInput()
+        let signal = input.waitForByte()
+        precondition(signal == Data([83]), "The test must signal the stop")
+        stopAnimation()
+        DispatchQueue.main.async { FileHandle.standardOutput.write(Data("main-loop-active\\n".utf8)) }
+        let closed = input.waitForByte()
+        precondition(closed == Data([68]), "The test must observe the closed connection")
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseSensorDisconnect(port: Int(CommandLine.arguments[1])!)
+`
+    stage = 'compiling test process'
+    const file = join(dir, 'disconnect.swift')
+    const executable = join(dir, 'disconnect')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    stage = 'starting test process'
+    child = spawn(executable, [String(server.address().port)])
+    child.stdin.on('error', () => {})
+    child.stdout.on('data', chunk => {
+      output += chunk
+      if (!receivedAngle && output.includes('angle-received')) {
+        receivedAngle = true
+        stage = 'sensor angle received; requesting stop'
+        stopRequested = true
+        child.stdin.write('S')
+      }
+      if (!mainLoopReady && output.includes('main-loop-active')) {
+        mainLoopReady = true
+        finishWhenClosed()
+      }
+    })
+    child.stderr.on('data', chunk => { errorOutput += chunk })
+    const status = await new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+    if (status !== 0) throw new Error(`Sensor test failed (${status}): ${errorOutput}`)
+    if (!connected || !receivedAngle) throw new Error('The sensor connection did not receive its angle')
+    if ((!closeFrameSeen && !peerEnded) || !disconnected || closeBeforeStop || !closeWhileRunning || !mainLoopReady) {
+      throw new Error('The sensor connection did not close after the screen saver stopped while its process was running')
+    }
+  } finally {
+    t.signal.removeEventListener('abort', onAbort)
+    const childClosed = child?.exitCode === null && child.signalCode === null
+      ? new Promise(resolve => child.once('close', resolve))
+      : null
+    stopChild()
+    if (childClosed) await childClosed
+    connection?.destroy()
+    await new Promise(resolve => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+for (const closeMode of ['tcp', 'websocket']) {
+  test(`the screen saver reconnects after ${closeMode} sensor disconnect`, {
+    skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+    timeout: 30000,
+  }, async t => {
+    const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-reconnect-test-'))
+    const server = createServer()
+    const sockets = new Set()
+    let child
+    let firstSocket
+    let secondSocket
+    let connections = 0
+    let cleared = false
+    let dropSent = false
+    let secondSent = false
+    let output = ''
+    let errorOutput = ''
+    const stopChild = () => {
+      if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
+    t.signal.addEventListener('abort', stopChild, { once: true })
+    const sendText = (socket, message) => {
+      const payload = Buffer.from(message)
+      socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]))
+    }
+    const sendSecond = () => {
+      if (cleared && secondSocket && !secondSent) {
+        secondSent = true
+        sendText(secondSocket, '{"angle":145}')
+      }
+    }
+    server.on('upgrade', (request, socket) => {
+      connections++
+      sockets.add(socket)
+      socket.on('close', () => sockets.delete(socket))
+      socket.on('error', () => {})
+      socket.on('end', () => socket.end())
+      const key = request.headers['sec-websocket-key']
+      const accept = createHash('sha1')
+        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest('base64')
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+      if (connections === 1) {
+        firstSocket = socket
+        sendText(socket, '{"angle":120}')
+      } else if (connections === 2) {
+        secondSocket = socket
+        sendSecond()
+      } else {
+        socket.destroy()
+      }
+    })
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', resolve)
+      })
+      const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+      const source = original.replace('ws://127.0.0.1:8787', 'ws://127.0.0.1:\\(CommandLine.arguments[1])')
+      if (source === original) throw new Error('The sensor URL seam was not found')
+      const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseSensorReconnect() {
+        sensorActive = true
+        sensorRetryDelay = 0.25
+        connectSensor()
+        guard let firstTask = sensorTask else { preconditionFailure("Initial sensor task is missing") }
+        let deadline = Date().addingTimeInterval(12)
+        func waitFor(_ predicate: () -> Bool, _ message: String) {
+            while !predicate() && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            precondition(predicate(), message)
+        }
+        waitFor({ lastLidAngle == 120 }, "The first sensor angle did not arrive")
+        FileHandle.standardOutput.write(Data("first-angle\\n".utf8))
+        waitFor({ lastLidAngle == nil }, "Disconnect did not clear the sensor angle")
+        FileHandle.standardOutput.write(Data("angle-cleared\\n".utf8))
+        waitFor({ lastLidAngle == 145 }, "The reconnected sensor angle did not arrive")
+        precondition(sensorTask != nil && sensorTask !== firstTask, "Reconnect must create a new sensor task")
+        FileHandle.standardOutput.write(Data("reconnected\\n".utf8))
+        stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseSensorReconnect()
+`
+      const file = join(dir, 'reconnect.swift')
+      const executable = join(dir, 'reconnect')
+      await writeFile(file, testSource)
+      execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+        '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+      child = spawn(executable, [String(server.address().port)])
+      child.stdout.on('data', chunk => {
+        output += chunk
+        if (!dropSent && output.includes('first-angle')) {
+          dropSent = true
+          if (closeMode === 'websocket') {
+            firstSocket.write(Buffer.from([0x88, 0x02, 0x03, 0xe8]))
+          } else {
+            firstSocket.end()
+          }
+        }
+        if (!cleared && output.includes('angle-cleared')) {
+          cleared = true
+          sendSecond()
+        }
+      })
+      child.stderr.on('data', chunk => { errorOutput += chunk })
+      const status = await new Promise((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      if (status !== 0) throw new Error(`Sensor reconnect failed (${status}): ${errorOutput}`)
+      if (connections !== 2 || !dropSent || !cleared || !secondSent || !output.includes('reconnected')) {
+        throw new Error(`Expected one reconnect: mode=${closeMode}, connections=${connections}, output=${output}`)
+      }
+    } finally {
+      t.signal.removeEventListener('abort', stopChild)
+      const childClosed = child?.exitCode === null && child.signalCode === null
+        ? new Promise(resolve => child.once('close', resolve))
+        : null
+      stopChild()
+      if (childClosed) await childClosed
+      for (const socket of sockets) socket.destroy()
+      await new Promise(resolve => server.close(resolve))
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+}
+
+test('the screen saver reconnects when the sensor stops answering pings', {
+  skip: process.platform !== 'darwin' && 'The screen saver requires macOS',
+  timeout: 15000,
+}, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'lidscape-saver-stall-test-'))
+  const server = createServer()
+  const sockets = new Set()
+  let child
+  let connections = 0
+  let unansweredPings = 0
+  let answeredPings = 0
+  let keepalives = 0
+  let output = ''
+  let errors = ''
+  const stopChild = () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  t.signal.addEventListener('abort', stopChild, { once: true })
+  server.on('upgrade', (request, socket) => {
+    const id = ++connections
+    sockets.add(socket)
+    socket.on('close', () => sockets.delete(socket))
+    socket.on('error', () => {})
+    socket.on('end', () => socket.end())
+    let buffered = Buffer.alloc(0)
+    socket.on('data', chunk => {
+      buffered = Buffer.concat([buffered, chunk])
+      while (buffered.length >= 2) {
+        const opcode = buffered[0] & 15
+        const masked = (buffered[1] & 128) !== 0
+        const length = buffered[1] & 127
+        if (length >= 126) return socket.destroy()
+        const offset = 2 + (masked ? 4 : 0)
+        if (buffered.length < offset + length) return
+        const payload = Buffer.from(buffered.subarray(offset, offset + length))
+        if (masked) for (let i = 0; i < payload.length; i++) payload[i] ^= buffered[2 + i % 4]
+        buffered = buffered.subarray(offset + length)
+        if (opcode === 1 && payload.toString() === "keepalive") keepalives++
+        if (opcode === 9) {
+          if (id === 1) unansweredPings++
+          else {
+            answeredPings++
+            const pong = Buffer.concat([Buffer.from([0x8a, payload.length]), payload])
+            if (id === 2) setTimeout(() => { if (!socket.destroyed) socket.write(pong) }, 120)
+            else socket.write(pong)
+          }
+        } else if (opcode === 8) {
+          socket.end(Buffer.concat([Buffer.from([0x88, payload.length]), payload]))
+          return
+        }
+      }
+    })
+    const key = request.headers['sec-websocket-key']
+    const accept = createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    const angle = id === 1 ? 120 : id === 2 ? 130 : 145
+    const payload = Buffer.from(`{"angle":${angle}}`)
+    socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]))
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const original = await readFile(fileURLToPath(new URL('./LidscapeSaver.swift', import.meta.url)), 'utf8')
+    let source = original.replace('ws://127.0.0.1:8787', 'ws://127.0.0.1:\\(CommandLine.arguments[1])')
+    source = source.replace('Timer(timeInterval: 5, repeats: true)', 'Timer(timeInterval: 0.25, repeats: true)')
+    if (source === original || !source.includes('Timer(timeInterval: 0.25, repeats: true)')) throw new Error('Sensor test seams missing')
+    const testSource = `${source}
+extension LidscapeSaverView {
+    func exerciseUnresponsiveSensor(resources: URL, other: LidscapeSaverView) {
+        startSensor(resources: resources)
+        sensorHeartbeatTimer?.fireDate = .distantFuture
+        guard let oldTask = sensorTask else { preconditionFailure("Initial sensor task is missing") }
+        let deadline = Date().addingTimeInterval(5)
+        func waitFor(_ condition: () -> Bool, _ message: String) {
+            while !condition() && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            precondition(condition(), message)
+        }
+        waitFor({ lastLidAngle == 120 }, "The first sensor angle did not arrive")
+        other.startSensor(resources: resources)
+        waitFor({ other.lastLidAngle == 130 }, "The second view did not connect")
+        sensorHeartbeatTimer?.fireDate = Date()
+        waitFor({ lastLidAngle == 145 }, "The sensor did not reconnect after it stopped answering")
+        guard let newTask = sensorTask else { preconditionFailure("Reconnected task is missing") }
+        let latePing = SensorPing()
+        latePing.complete(NSError(domain: "late", code: 1))
+        sensorPingCompleted(oldTask, ping: latePing)
+        sensorPingCompleted(newTask, ping: latePing)
+        precondition(sensorTask === newTask && lastLidAngle == 145, "A late callback must not affect the new connection")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.75))
+        precondition(lastLidAngle == 145 && other.lastLidAngle == 130, "Healthy, still sensors must stay connected")
+        other.sensorHeartbeatTimer?.fireDate = .distantFuture
+        waitFor({ other.sensorPingPending == nil }, "The second sensor ping did not finish")
+        guard let otherTask = other.sensorTask else { preconditionFailure("Second sensor task is missing") }
+        other.checkSensorHeartbeat()
+        other.sensorHeartbeatTimer?.fireDate = Date().addingTimeInterval(0.25)
+        Thread.sleep(forTimeInterval: 0.7)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        precondition(other.sensorTask === otherTask && other.lastLidAngle == 130, "A delayed main thread must not disconnect a healthy sensor")
+        stopAnimation()
+        sensorPingCompleted(newTask, ping: latePing)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        precondition(!sensorActive && sensorTask == nil, "Stopping must keep the sensor disconnected")
+        precondition(other.sensorActive && other.lastLidAngle == 130, "Stopping one view must not stop the other")
+        other.stopAnimation()
+    }
+}
+let view = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+let other = LidscapeSaverView(frame: NSRect(x: 0, y: 0, width: 640, height: 480), isPreview: false)!
+view.exerciseUnresponsiveSensor(resources: URL(fileURLWithPath: CommandLine.arguments[2]), other: other)
+`
+    const file = join(dir, 'stall.swift')
+    const executable = join(dir, 'stall')
+    await writeFile(file, testSource)
+    execFileSync('xcrun', ['swiftc', '-framework', 'AppKit', '-framework', 'ScreenSaver',
+      '-framework', 'WebKit', file, '-o', executable], { stdio: 'pipe' })
+    child = spawn(executable, [String(server.address().port), dir])
+    child.stdout.on('data', chunk => { output += chunk })
+    child.stderr.on('data', chunk => { errors += chunk })
+    const status = await new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+    if (status !== 0) throw new Error(`Sensor stall test failed (${status}): connections=${connections}, unansweredPings=${unansweredPings}, answeredPings=${answeredPings}; ${errors}`)
+    if (connections !== 3 || unansweredPings < 1 || answeredPings < 1 || keepalives < 3) {
+      throw new Error(`Unexpected sensor ping behavior: connections=${connections}, missed=${unansweredPings}, answered=${answeredPings}, keepalives=${keepalives}, output=${output}`)
+    }
+  } finally {
+    t.signal.removeEventListener('abort', stopChild)
+    const childClosed = child?.exitCode === null && child.signalCode === null
+      ? new Promise(resolve => child.once('close', resolve)) : null
+    stopChild()
+    if (childClosed) await childClosed
+    for (const socket of sockets) socket.destroy()
+    await new Promise(resolve => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})

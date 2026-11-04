@@ -1,5 +1,6 @@
 .DS_Store
 node_modules/
+dist/
 *.png
 !docs/*.png
 !app/design/icon.png

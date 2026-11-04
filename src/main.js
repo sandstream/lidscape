@@ -18,6 +18,11 @@ import { createTracker } from './tracking.js'
 import { LANGUAGES, pickLang, local } from './lang/index.js'
 import { watchUpdates } from './update.js'
 import { setupHowTo } from './howto.js'
+import { setupScreenSaverSettings } from './screensaver-settings.js'
+import { setupWallpaperSettings } from './wallpaper-settings.js'
+
+// After a setting change, let src/boot.js put the last frame on screen first.
+await window.lidscapeStillShown
 
 // The screen is modelled at real size: MacBook Pro 14" is about 30 × 19.5 cm.
 const SCREEN_H = 19.5
@@ -45,6 +50,7 @@ document.documentElement.lang = lang
 const canvas = document.getElementById('scene')
 // Without WebGL 2 nothing can draw: say so instead of showing a black window.
 if (!canvas.getContext('webgl2')) {
+  window.lidscapeReleaseStill?.()
   document.body.insertAdjacentHTML('beforeend', `<p id="no-webgl">${t.noWebgl}</p>`)
   throw new Error('Lidscape: WebGL 2 is not available')
 }
@@ -229,6 +235,8 @@ function enterCity(id) {
     params.set('city', id)
     params.set('view', 'map')
     params.set('enter', '1')
+    params.set('progress', progress.toFixed(3))
+    saveStill()
     location.search = params.toString()
     return
   }
@@ -259,12 +267,48 @@ for (const [code, l] of Object.entries(LANGUAGES)) langPicker.add(new Option(l.n
 const mapLangPicker = document.getElementById('map-lang')
 mapLangPicker.setAttribute('aria-label', t.lang)
 for (const [code, l] of Object.entries(LANGUAGES)) mapLangPicker.add(new Option(l.name, code, false, code === lang))
+// A setting reloads the page. Carry the book's position, so it does not fall back
+// to almost closed and open again before the lid sensor answers.
+function reloadWithSettings() {
+  params.set('progress', progress.toFixed(3))
+  saveStill()
+  location.search = params.toString()
+}
+
+// Save the last frame and the menu for src/boot.js, which shows them until the
+// new page draws. The canvas is read in the same task as a render, since the
+// browser clears it after each frame.
+function saveStill() {
+  const hud = document.getElementById(document.body.classList.contains('map-view') ? 'map-info' : 'hud')
+  // The markup does not hold the chosen values, so write them into it.
+  for (const option of hud.querySelectorAll('option')) option.toggleAttribute('selected', option.selected)
+  for (const input of hud.querySelectorAll('input')) {
+    input.setAttribute('value', input.value)
+    input.toggleAttribute('checked', input.checked)
+  }
+  const still = { hud: document.getElementById('map-toggle').outerHTML + hud.outerHTML }
+  try {
+    composer.render()
+    still.image = canvas.toDataURL('image/jpeg', 0.9)
+  } catch {
+    // A failed frame capture must not prevent the setting from changing.
+  }
+  try {
+    sessionStorage.setItem('lidscape.still', JSON.stringify(still))
+  } catch {
+    // A large window can pass the storage limit. The menu alone still helps.
+    try {
+      sessionStorage.setItem('lidscape.still', JSON.stringify({ hud: still.hud }))
+    } catch {}
+  }
+}
+
 function changeLanguage(code) {
   try {
     localStorage.setItem(LANG_KEY, code)
   } catch {}
   params.set('lang', code)
-  location.search = params.toString()
+  reloadWithSettings()
 }
 langPicker.addEventListener('change', () => changeLanguage(langPicker.value))
 mapLangPicker.addEventListener('change', () => changeLanguage(mapLangPicker.value))
@@ -276,7 +320,7 @@ for (const c of CITIES) cityPicker.add(new Option(local(c.name, lang), c.id, fal
 cityPicker.hidden = CITIES.length < 2
 cityPicker.addEventListener('change', () => {
   params.set('city', cityPicker.value)
-  location.search = params.toString()
+  reloadWithSettings()
 })
 
 const themePicker = document.getElementById('theme')
@@ -284,7 +328,7 @@ themePicker.setAttribute('aria-label', t.theme)
 for (const th of THEMES) themePicker.add(new Option(local(th.name, lang), th.id, false, th.id === theme.id))
 themePicker.addEventListener('change', () => {
   params.set('theme', themePicker.value)
-  location.search = params.toString()
+  reloadWithSettings()
 })
 
 const variantPicker = document.getElementById('variant')
@@ -294,7 +338,7 @@ for (const v of VARIANTS) variantPicker.add(new Option(local(v.name, lang), v.id
 variantPicker.addEventListener('change', () => {
   if (variantPicker.value) params.set('variant', variantPicker.value)
   else params.delete('variant')
-  location.search = params.toString()
+  reloadWithSettings()
 })
 
 // A setting shows only when the city allows what it controls: no snow slider in Nairobi.
@@ -321,6 +365,8 @@ for (const li of document.querySelectorAll('#hud-status li')) {
 
 watchUpdates({ t, hud })
 setupHowTo({ t, lang, theme, variant })
+setupScreenSaverSettings({ t })
+setupWallpaperSettings({ t, lang })
 
 function setStatus(source, value) {
   document.querySelector(`[data-source="${source}"]`).dataset.state = value
@@ -627,6 +673,7 @@ refreshHud()
 
 const eye = { ...DEFAULT_EYE }
 let progress = input.manual
+window.lidscape.progress = () => progress
 let lights = input.lightsOn ? 1 : 0
 const clock = new THREE.Clock()
 let hudTick = 0
@@ -728,6 +775,8 @@ function frame() {
   updateLabel()
   if (flight === 0) city.renderReflection(renderer, camera)
   composer.render()
+  window.lidscapeMarkReady?.()
+  window.lidscapeReleaseStill?.()
 
   if (input.cameraOn && (hudTick = (hudTick + 1) % 15) === 0) refreshHud()
   requestAnimationFrame(frame)

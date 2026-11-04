@@ -48,3 +48,32 @@ test('a bridge without a sensor disables automatic folding', () => {
     globalThis.WebSocket = oldSocket
   }
 })
+
+test('disconnect closes the socket and prevents another connection', () => {
+  const oldSocket = globalThis.WebSocket
+  const oldTimeout = globalThis.setTimeout
+  const oldClear = globalThis.clearTimeout
+  let socket
+  let retry
+  let cleared
+  globalThis.WebSocket = class {
+    constructor() { socket = this }
+    close() { this.onclose() }
+  }
+  globalThis.setTimeout = (fn) => { retry = fn; return 42 }
+  globalThis.clearTimeout = (id) => { cleared = id }
+  try {
+    const lid = connectLid(() => {})
+    socket.onopen()
+    socket.onclose()
+    lid.disconnect()
+    retry()
+    assert.equal(cleared, 42)
+    assert.equal(lid.connected, false)
+    assert.equal(lid.progress, null)
+  } finally {
+    globalThis.WebSocket = oldSocket
+    globalThis.setTimeout = oldTimeout
+    globalThis.clearTimeout = oldClear
+  }
+})

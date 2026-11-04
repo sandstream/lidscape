@@ -7,6 +7,7 @@
 // report layout follow samhenrigold/LidAngleSensor (Apache 2.0).
 
 import Foundation
+import AppKit
 import IOKit.hid
 import Network
 
@@ -89,6 +90,8 @@ parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
 let listener = try NWListener(using: parameters)
 var clients: [ObjectIdentifier: NWConnection] = [:]
 var lastAngle: Int?
+let saverHelper = Bundle.main.bundleIdentifier == "se.sandstream.lidscape.sensor"
+var lastClientSeen = Date()
 
 func send(_ angle: Int, to connection: NWConnection) {
     sendText("{\"angle\":\(angle)}", to: connection)
@@ -105,13 +108,25 @@ func sendText(_ text: String, to connection: NWConnection) {
 
 listener.newConnectionHandler = { connection in
     let id = ObjectIdentifier(connection)
+    func receive() {
+        connection.receiveMessage { data, context, _, error in
+            if error != nil || (context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata)?.opcode == .close {
+                connection.cancel()
+            } else {
+                if saverHelper && data == Data("keepalive".utf8) { lastClientSeen = Date() }
+                receive()
+            }
+        }
+    }
     connection.stateUpdateHandler = { state in
         switch state {
         case .ready:
             clients[id] = connection
+            lastClientSeen = Date()
             if sensor == nil { sendText("{\"sensor\":false}", to: connection) }
             if let lastAngle { send(lastAngle, to: connection) }
             print("LidBridge: client connected (\(clients.count))")
+            receive()
         case .failed, .cancelled:
             clients[id] = nil
             print("LidBridge: client left (\(clients.count))")
@@ -137,4 +152,17 @@ Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { _ in
     clients.values.forEach { send(angle, to: $0) }
 }
 
-RunLoop.main.run()
+if saverHelper {
+    Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+        if !FileManager.default.fileExists(atPath: Bundle.main.bundlePath) { exit(0) }
+        if Date().timeIntervalSince(lastClientSeen) > 20 { exit(0) }
+    }
+}
+
+if saverHelper {
+    NSLog("LidBridge: screen saver helper started")
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    NSApplication.shared.run()
+} else {
+    RunLoop.main.run()
+}
